@@ -47,7 +47,8 @@ end
 
 -- Helper function to parse enemy line (e.g., "5 Donjon Bats.")
 local function parse_enemy_line(line)
-    local count, name = string.match(line, "^(%d+)%s+(.-)%.$");
+    -- Try to find pattern anywhere in the line, not just at the start
+    local count, name = string.match(line, "(%d+)%s+(.-)%.");
     if count and name then
         return tonumber(count), name;
     end
@@ -77,7 +78,6 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     -- Check for Grounds Tome interaction - initialize tracking
     if string.find(msg, "A grounds tome has been placed here by the Adventurers' Mutual Aid Network %(A%.M%.A%.N%.%)") then
         training_data.is_active = true;
-        print("[AMANTracker] Now monitoring for training regime.");
     end
     
     -- Only process further messages if tracking is active
@@ -91,7 +91,6 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
         clear_training_data();
         training_data.is_active = true;
         training_data.is_parsing = true;
-        print("[AMANTracker] Training regime detected, parsing targets...");
         return;
     end
     
@@ -103,11 +102,9 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
             if not training_data.enemy_1_total then
                 training_data.enemy_1_total = count;
                 training_data.enemy_name_1 = name;
-                print(string.format("[AMANTracker] Enemy 1: %d x %s", count, name));
             elseif not training_data.enemy_2_total then
                 training_data.enemy_2_total = count;
                 training_data.enemy_name_2 = name;
-                print(string.format("[AMANTracker] Enemy 2: %d x %s", count, name));
             end
             return;
         end
@@ -116,7 +113,6 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
         local level_range = parse_level_range(msg);
         if level_range then
             training_data.target_level_range = level_range;
-            print(string.format("[AMANTracker] Level Range: %s", level_range));
             return;
         end
         
@@ -124,7 +120,6 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
         local training_area = parse_training_area(msg);
         if training_area then
             training_data.training_area_zone = training_area;
-            print(string.format("[AMANTracker] Training Area: %s", training_area));
             return;
         end
     end
@@ -145,7 +140,6 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     
     -- Check for training cancellation
     if string.find(msg, "Training regime canceled%.") then
-        print("[AMANTracker] Training regime canceled, clearing data.");
         clear_training_data();
         return;
     end
