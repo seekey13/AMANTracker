@@ -15,6 +15,9 @@ addon.link      = 'https://github.com/seekey13/AMANTracker';
 
 require('common');
 
+-- Load UI module
+local tracker_ui = require('lib.tracker_ui');
+
 -- Training data storage
 local training_data = {
     is_active = false,
@@ -26,6 +29,9 @@ local training_data = {
     target_level_range = nil,
     training_area_zone = nil
 };
+
+-- Initialize the UI with training data reference
+tracker_ui.init(training_data);
 
 -- Helper function to clear training data
 local function clear_training_data()
@@ -50,8 +56,12 @@ end
 
 -- Helper function to parse level range (e.g., "Target level range: 48~49.")
 local function parse_level_range(line)
-    local range = string.match(line, "Target level range:%s*(.-)%.$");
-    return range;
+    -- Extract the two numbers after "Target level range:"
+    local first_num, second_num = string.match(line, "Target level range:%s*(%d+)%D*(%d+)");
+    if first_num and second_num then
+        return first_num .. "~" .. second_num;
+    end
+    return nil;
 end
 
 -- Helper function to parse training area (e.g., "Training area: Garlaige Citadel.")
@@ -139,4 +149,44 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
         clear_training_data();
         return;
     end
+end);
+
+-- Event: Render UI
+ashita.events.register('d3d_present', 'd3d_present_cb', function ()
+    tracker_ui.render();
+end);
+
+-- Command: Handle addon commands
+ashita.events.register('command', 'command_cb', function (e)
+    local args = e.command:args();
+    if #args == 0 or args[1] ~= '/amantracker' then
+        return;
+    end
+    
+    e.blocked = true;
+    
+    -- Toggle UI visibility
+    if #args == 1 or args[2] == 'toggle' then
+        tracker_ui.toggle();
+        return;
+    end
+    
+    -- Show UI
+    if args[2] == 'show' then
+        tracker_ui.open();
+        return;
+    end
+    
+    -- Hide UI
+    if args[2] == 'hide' then
+        tracker_ui.close();
+        return;
+    end
+    
+    -- Help
+    print('[AMANTracker] Commands:');
+    print('  /amantracker - Toggle UI');
+    print('  /amantracker toggle - Toggle UI');
+    print('  /amantracker show - Show UI');
+    print('  /amantracker hide - Hide UI');
 end);
