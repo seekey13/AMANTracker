@@ -19,9 +19,9 @@ local training_data = nil;
 -- UI Constants
 -- ============================================================================
 
-local MIN_WINDOW_WIDTH = 300;
+local MIN_WINDOW_WIDTH = 500;
 local MIN_WINDOW_HEIGHT = 150;
-local MAX_WINDOW_WIDTH = 500;
+local MAX_WINDOW_WIDTH = 700;
 local MAX_WINDOW_HEIGHT = 400;
 
 -- ============================================================================
@@ -79,18 +79,13 @@ function tracker_ui.render()
         
         imgui.Separator();
         
-        -- Enemy 1
-        if training_data.enemy_1_total and training_data.enemy_name_1 then
-            imgui.Text(string.format('Enemy 1: %d x %s', training_data.enemy_1_total, training_data.enemy_name_1));
+        -- Display all enemies
+        if training_data.enemies and #training_data.enemies > 0 then
+            for i, enemy in ipairs(training_data.enemies) do
+                imgui.Text(string.format('Enemy %d: %d x %s', i, enemy.total, enemy.name));
+            end
         else
-            imgui.TextDisabled('Enemy 1: None');
-        end
-        
-        -- Enemy 2
-        if training_data.enemy_2_total and training_data.enemy_name_2 then
-            imgui.Text(string.format('Enemy 2: %d x %s', training_data.enemy_2_total, training_data.enemy_name_2));
-        else
-            imgui.TextDisabled('Enemy 2: None');
+            imgui.TextDisabled('Enemies: None');
         end
         
         imgui.Separator();
@@ -114,6 +109,15 @@ function tracker_ui.render()
         -- Parsing indicator
         if training_data.is_parsing then
             imgui.TextColored({ 1.0, 1.0, 0.0, 1.0 }, 'Parsing training data...');
+        end
+        
+        -- Raw enemy lines (debug)
+        if training_data.raw_enemy_lines and #training_data.raw_enemy_lines > 0 then
+            imgui.Separator();
+            imgui.TextColored({ 0.7, 0.7, 0.7, 1.0 }, 'Raw Lines Captured:');
+            for i, line in ipairs(training_data.raw_enemy_lines) do
+                imgui.TextWrapped(string.format('%d: %s', i, line));
+            end
         end
     end
     imgui.End();

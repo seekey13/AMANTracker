@@ -22,12 +22,10 @@ local tracker_ui = require('lib.tracker_ui');
 local training_data = {
     is_active = false,
     is_parsing = false,
-    enemy_1_total = nil,
-    enemy_name_1 = nil,
-    enemy_2_total = nil,
-    enemy_name_2 = nil,
+    enemies = {},  -- Array of {total, name} tables
     target_level_range = nil,
-    training_area_zone = nil
+    training_area_zone = nil,
+    raw_enemy_lines = {}  -- Debug: capture all raw lines between markers
 };
 
 -- Initialize the UI with training data reference
@@ -37,18 +35,22 @@ tracker_ui.init(training_data);
 local function clear_training_data()
     training_data.is_active = false;
     training_data.is_parsing = false;
-    training_data.enemy_1_total = nil;
-    training_data.enemy_name_1 = nil;
-    training_data.enemy_2_total = nil;
-    training_data.enemy_name_2 = nil;
+    training_data.enemies = {};
     training_data.target_level_range = nil;
     training_data.training_area_zone = nil;
+    training_data.raw_enemy_lines = {};
 end
 
 -- Helper function to parse enemy line (e.g., "5 Donjon Bats.")
 local function parse_enemy_line(line)
-    -- Try to find pattern anywhere in the line, not just at the start
-    local count, name = string.match(line, "(%d+)%s+(.-)%.");
+    -- Exclude lines that are level range or training area
+    if string.find(line, "Target level range:") or string.find(line, "Training area:") then
+        return nil, nil;
+    end
+    
+    -- Match: number, spaces, non-period characters, then a period
+    -- This prevents matching across multiple enemies
+    local count, name = string.match(line, "^%s*(%d+)%s+([^%.]+)%.");
     if count and name then
         return tonumber(count), name;
     end
@@ -93,30 +95,43 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
         training_data.is_parsing = true;
         return;
     end
-    
     -- Parse enemy and training details while in parsing mode
     if training_data.is_parsing then
-        -- Try to parse as enemy line
-        local count, name = parse_enemy_line(msg);
-        if count and name then
-            if not training_data.enemy_1_total then
-                training_data.enemy_1_total = count;
-                training_data.enemy_name_1 = name;
-            elseif not training_data.enemy_2_total then
-                training_data.enemy_2_total = count;
-                training_data.enemy_name_2 = name;
-            end
-            return;
-        end
-        
-        -- Try to parse level range
+        -- Check if we hit the level range line - this ends enemy parsing
         local level_range = parse_level_range(msg);
         if level_range then
             training_data.target_level_range = level_range;
+            training_data.is_parsing = false;  -- Stop parsing enemies
             return;
         end
         
-        -- Try to parse training area
+        -- Store only the first raw line for debugging
+        if #training_data.raw_enemy_lines == 0 then
+            table.insert(training_data.raw_enemy_lines, msg);
+            
+            -- Parse all enemies from this first line only
+            local remaining_text = msg;
+            while true do
+                local count, name = string.match(remaining_text, "(%d+)%s+([^%.?]+)%.");
+                if not count or not name then
+                    break;  -- No more enemies found
+                end
+                
+                -- Check if this is not a level range or training area
+                if not string.find(name, "Target level range") and not string.find(name, "Training area") then
+                    table.insert(training_data.enemies, {total = tonumber(count), name = name});
+                end
+                
+                -- Remove this enemy from the remaining text
+                local pattern = count .. "%s+" .. name:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1") .. "%.";
+                remaining_text = string.gsub(remaining_text, pattern, "", 1);
+            end
+        end
+        return;
+    end
+    
+    -- Parse training area (after level range, outside parsing mode)
+    if not training_data.is_parsing and training_data.target_level_range and not training_data.training_area_zone then
         local training_area = parse_training_area(msg);
         if training_area then
             training_data.training_area_zone = training_area;
@@ -126,13 +141,14 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     
     -- Check for training confirmation
     if string.find(msg, "New training regime registered!") then
-        training_data.is_parsing = false;
         print("[AMANTracker] Training regime confirmed!");
-        print(string.format("[AMANTracker] Active Training: %d %s, %d %s in %s (Level %s)", 
-            training_data.enemy_1_total or 0, 
-            training_data.enemy_name_1 or "Unknown",
-            training_data.enemy_2_total or 0,
-            training_data.enemy_name_2 or "Unknown",
+        local enemy_str = "";
+        for i, enemy in ipairs(training_data.enemies) do
+            if i > 1 then enemy_str = enemy_str .. ", " end
+            enemy_str = enemy_str .. string.format("%d %s", enemy.total, enemy.name);
+        end
+        print(string.format("[AMANTracker] Active Training: %s in %s (Level %s)", 
+            enemy_str ~= "" and enemy_str or "Unknown",
             training_data.training_area_zone or "Unknown",
             training_data.target_level_range or "Unknown"));
         return;
