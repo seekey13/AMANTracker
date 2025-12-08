@@ -14,11 +14,20 @@ addon.desc      = 'GUI Tracker for Adventurers\' Mutual Aid Network Training Reg
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
 require('common');
+local settings = require('settings');
 
 -- Load UI module
 local tracker_ui = require('lib.tracker_ui');
 
--- Training data storage
+-- Default settings (structure for persistent data)
+local default_settings = T{
+    is_active = false,
+    enemies = {},  -- Array of {total, name} tables
+    target_level_range = nil,
+    training_area_zone = nil,
+};
+
+-- Training data storage (includes both persistent and transient data)
 local training_data = {
     is_active = false,
     is_parsing = false,
@@ -28,8 +37,48 @@ local training_data = {
     raw_enemy_lines = {}  -- Debug: capture all raw lines between markers
 };
 
+-- Load saved settings
+local saved_data = settings.load(default_settings);
+
+-- Restore saved hunt data if it exists
+if saved_data.is_active then
+    training_data.is_active = saved_data.is_active;
+    training_data.enemies = saved_data.enemies;
+    training_data.target_level_range = saved_data.target_level_range;
+    training_data.training_area_zone = saved_data.training_area_zone;
+    
+    -- Print restoration message
+    if #training_data.enemies > 0 then
+        print('[AMANTracker] Restored active hunt from saved data');
+    end
+end
+
 -- Initialize the UI with training data reference
 tracker_ui.init(training_data);
+
+-- Helper function to save current hunt data
+local function save_training_data()
+    saved_data.is_active = training_data.is_active;
+    saved_data.enemies = training_data.enemies;
+    saved_data.target_level_range = training_data.target_level_range;
+    saved_data.training_area_zone = training_data.training_area_zone;
+    settings.save();
+end
+
+-- Register settings callback for external changes
+settings.register('settings', 'settings_update', function(s)
+    if s ~= nil then
+        saved_data = s;
+        -- Restore to training_data if different
+        if s.is_active ~= training_data.is_active or 
+           s.target_level_range ~= training_data.target_level_range then
+            training_data.is_active = s.is_active;
+            training_data.enemies = s.enemies;
+            training_data.target_level_range = s.target_level_range;
+            training_data.training_area_zone = s.training_area_zone;
+        end
+    end
+end);
 
 -- Helper function to clear training data
 local function clear_training_data()
@@ -39,6 +88,9 @@ local function clear_training_data()
     training_data.target_level_range = nil;
     training_data.training_area_zone = nil;
     training_data.raw_enemy_lines = {};
+    
+    -- Save the cleared state
+    save_training_data();
 end
 
 -- Helper function to parse enemy line (e.g., "5 Donjon Bats.")
@@ -151,6 +203,9 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
             enemy_str ~= "" and enemy_str or "Unknown",
             training_data.training_area_zone or "Unknown",
             training_data.target_level_range or "Unknown"));
+        
+        -- Save the confirmed training data
+        save_training_data();
         return;
     end
     
@@ -164,6 +219,11 @@ end);
 -- Event: Render UI
 ashita.events.register('d3d_present', 'd3d_present_cb', function ()
     tracker_ui.render();
+end);
+
+-- Event: Addon unload - save data
+ashita.events.register('unload', 'unload_cb', function()
+    save_training_data();
 end);
 
 -- Command: Handle addon commands
@@ -193,10 +253,18 @@ ashita.events.register('command', 'command_cb', function (e)
         return;
     end
     
+    -- Clear saved data
+    if args[2] == 'clear' then
+        clear_training_data();
+        print('[AMANTracker] Training data cleared and saved.');
+        return;
+    end
+    
     -- Help
     print('[AMANTracker] Commands:');
     print('  /amantracker - Toggle UI');
     print('  /amantracker toggle - Toggle UI');
     print('  /amantracker show - Show UI');
     print('  /amantracker hide - Hide UI');
+    print('  /amantracker clear - Clear saved training data');
 end);
