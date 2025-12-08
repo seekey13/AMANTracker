@@ -110,15 +110,6 @@ function tracker_ui.render()
         if training_data.is_parsing then
             imgui.TextColored({ 1.0, 1.0, 0.0, 1.0 }, 'Parsing training data...');
         end
-        
-        -- Raw enemy lines (debug)
-        if training_data.raw_enemy_lines and #training_data.raw_enemy_lines > 0 then
-            imgui.Separator();
-            imgui.TextColored({ 0.7, 0.7, 0.7, 1.0 }, 'Raw Lines Captured:');
-            for i, line in ipairs(training_data.raw_enemy_lines) do
-                imgui.TextWrapped(string.format('%d: %s', i, line));
-            end
-        end
     end
     imgui.End();
 end

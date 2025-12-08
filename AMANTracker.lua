@@ -1,6 +1,6 @@
 --[[
 AMANTracker
-Automatically removes invisible status when attempting to use commands while invisible.
+GUI Tracker for Adventurers' Mutual Aid Network Training Regimes
 Copyright (c) 2025 Seekey
 https://github.com/seekey13/AMANTracker
 
@@ -10,7 +10,7 @@ This addon is designed for Ashita v4.
 addon.name      = 'AMANTracker';
 addon.author    = 'Seekey';
 addon.version   = '0.1';
-addon.desc      = 'Automatically removes invisible status when blocked by invisibility';
+addon.desc      = 'GUI Tracker for Adventurers\' Mutual Aid Network Training Regimes';
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
 require('common');
