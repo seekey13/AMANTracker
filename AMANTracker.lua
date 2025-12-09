@@ -9,7 +9,7 @@ This addon is designed for Ashita v4.
 
 addon.name      = 'AMANTracker';
 addon.author    = 'Seekey';
-addon.version   = '0.1';
+addon.version   = '1.0';
 addon.desc      = 'GUI Tracker for Adventurers\' Mutual Aid Network Training Regimes';
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
@@ -41,12 +41,17 @@ local training_data = {
 -- Load saved settings
 local saved_data = settings.load(default_settings);
 
+-- Helper function to sync persistent data fields between tables
+local function sync_persistent_data(source, target)
+    target.is_active = source.is_active;
+    target.enemies = source.enemies;
+    target.target_level_range = source.target_level_range;
+    target.training_area_zone = source.training_area_zone;
+end
+
 -- Restore saved hunt data if it exists
 if saved_data.is_active then
-    training_data.is_active = saved_data.is_active;
-    training_data.enemies = saved_data.enemies;
-    training_data.target_level_range = saved_data.target_level_range;
-    training_data.training_area_zone = saved_data.training_area_zone;
+    sync_persistent_data(saved_data, training_data);
     
     -- Print restoration message
     if #training_data.enemies > 0 then
@@ -73,10 +78,7 @@ settings.register('settings', 'settings_update', function(s)
         -- Restore to training_data if different
         if s.is_active ~= training_data.is_active or 
            s.target_level_range ~= training_data.target_level_range then
-            training_data.is_active = s.is_active;
-            training_data.enemies = s.enemies;
-            training_data.target_level_range = s.target_level_range;
-            training_data.training_area_zone = s.training_area_zone;
+            sync_persistent_data(s, training_data);
         end
     end
 end);
