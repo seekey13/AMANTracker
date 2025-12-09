@@ -15,6 +15,7 @@ addon.link      = 'https://github.com/seekey13/AMANTracker';
 
 require('common');
 local settings = require('settings');
+local parser = require('lib.parser');
 
 -- Load UI module
 local tracker_ui = require('lib.tracker_ui');
@@ -120,38 +121,6 @@ local function find_enemy_by_name(enemy_name)
     return nil, nil;
 end
 
--- Helper function to parse enemy line (e.g., "5 Donjon Bats.")
-local function parse_enemy_line(line)
-    -- Exclude lines that are level range or training area
-    if string.find(line, "Target level range:") or string.find(line, "Training area:") then
-        return nil, nil;
-    end
-    
-    -- Match: number, spaces, non-period characters, then a period
-    -- This prevents matching across multiple enemies
-    local count, name = string.match(line, "^%s*(%d+)%s+([^%.]+)%.");
-    if count and name then
-        return tonumber(count), name;
-    end
-    return nil, nil;
-end
-
--- Helper function to parse level range (e.g., "Target level range: 48~49.")
-local function parse_level_range(line)
-    -- Extract the two numbers after "Target level range:"
-    local first_num, second_num = string.match(line, "Target level range:%s*(%d+)%D*(%d+)");
-    if first_num and second_num then
-        return first_num .. "~" .. second_num;
-    end
-    return nil;
-end
-
--- Helper function to parse training area (e.g., "Training area: Garlaige Citadel.")
-local function parse_training_area(line)
-    local area = string.match(line, "Training area:%s*(.-)%.$");
-    return area;
-end
-
 -- Message handler functions
 local function handle_tome_interaction()
     training_data.is_active = true;
@@ -165,7 +134,7 @@ local function handle_training_start()
 end
 
 local function handle_level_range(msg)
-    local level_range = parse_level_range(msg);
+    local level_range = parser.parse_level_range(msg);
     if level_range then
         training_data.target_level_range = level_range;
         training_data.is_parsing = false;
@@ -178,26 +147,17 @@ local function handle_enemy_parsing(msg)
     if #training_data.raw_enemy_lines == 0 then
         table.insert(training_data.raw_enemy_lines, msg);
         
-        local remaining_text = msg;
-        while true do
-            local count, name = string.match(remaining_text, "(%d+)%s+([^%.?]+)%.");
-            if not count or not name then
-                break;
-            end
-            
-            if not string.find(name, "Target level range") and not string.find(name, "Training area") then
-                table.insert(training_data.enemies, {total = tonumber(count), killed = 0, name = name});
-            end
-            
-            local pattern = count .. "%s+" .. name:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1") .. "%.";
-            remaining_text = string.gsub(remaining_text, pattern, "", 1);
+        -- Use parser module to extract all enemies
+        local enemies = parser.parse_enemies(msg);
+        for _, enemy in ipairs(enemies) do
+            table.insert(training_data.enemies, enemy);
         end
     end
 end
 
 local function handle_training_area(msg)
     if not training_data.is_parsing and training_data.target_level_range and not training_data.training_area_zone then
-        local training_area = parse_training_area(msg);
+        local training_area = parser.parse_training_area(msg);
         if training_area then
             training_data.training_area_zone = training_area;
             return true;
