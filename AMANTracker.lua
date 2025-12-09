@@ -30,6 +30,7 @@ local MESSAGES = {
     TRAINING_START = "The information on this page instructs you to defeat the following:",
     REGIME_CONFIRMED = "New training regime registered!",
     REGIME_CANCELED = "Training regime canceled%.",
+    REGIME_COMPLETE = "You have successfully completed the training regime.",
     REGIME_RESET = "Your current training regime will begin anew!",
     DEFEAT_PATTERN_1 = "defeats the (.-)%.",
     DEFEAT_PATTERN_2 = "The (.-) falls to the ground%.",

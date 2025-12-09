@@ -20,9 +20,7 @@ local training_data = nil;
 -- ============================================================================
 
 local MIN_WINDOW_WIDTH = 300;
-local MIN_WINDOW_HEIGHT = 150;
-local MAX_WINDOW_WIDTH = 300;
-local MAX_WINDOW_HEIGHT = 400;
+local MAX_WINDOW_WIDTH = 500;
 
 -- ============================================================================
 -- Module Functions
@@ -97,10 +95,10 @@ function tracker_ui.render()
         return;
     end
     
-    -- Set window flags for auto-sizing
-    imgui.SetNextWindowSizeConstraints({ MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT }, { MAX_WINDOW_WIDTH, MAX_WINDOW_HEIGHT });
+    -- Set window size constraints (width adjustable, height auto-sized)
+    imgui.SetNextWindowSizeConstraints({ MIN_WINDOW_WIDTH, -1 }, { MAX_WINDOW_WIDTH, -1 });
     
-    if imgui.Begin('AMAN Tracker', ui_visible, ImGuiWindowFlags_AlwaysAutoResize) then
+    if imgui.Begin('AMAN Tracker', ui_visible) then
         -- Training Area
         display_field('Training Area', training_data.training_area_zone);
         
