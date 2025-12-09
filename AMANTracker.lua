@@ -385,6 +385,16 @@ local function check_job_change()
         return;
     end
     
+    -- Ignore nil job values (occurs during zoning)
+    if current_main_job == nil or current_sub_job == nil then
+        return;
+    end
+    
+    -- Ignore job ID 0 (uninitialized/loading state during zoning)
+    if current_main_job == 0 or current_sub_job == 0 then
+        return;
+    end
+    
     -- Check if job changed (no initialization needed, done at load time)
     if current_main_job ~= training_data.last_main_job or current_sub_job ~= training_data.last_sub_job then
         -- Job changed - clear training data

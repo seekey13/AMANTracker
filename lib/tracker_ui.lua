@@ -95,6 +95,11 @@ function tracker_ui.render()
         return;
     end
     
+    -- Only show UI when we have parsed data (not all nil)
+    if not training_data.target_level_range or not training_data.training_area_zone or not training_data.enemies or #training_data.enemies == 0 then
+        return;
+    end
+    
     -- Set window size constraints (width adjustable, height auto-sized)
     imgui.SetNextWindowSizeConstraints({ MIN_WINDOW_WIDTH, -1 }, { MAX_WINDOW_WIDTH, -1 });
     
