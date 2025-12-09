@@ -54,16 +54,6 @@ if saved_data.is_active then
     end
 end
 
--- Helper function to log to file safely
-local debug_messages = {};
-local function log_debug(message)
-    table.insert(debug_messages, os.date('%H:%M:%S') .. ' - ' .. message);
-    -- Keep only last 20 messages
-    if #debug_messages > 20 then
-        table.remove(debug_messages, 1);
-    end
-end
-
 -- Initialize the UI with training data reference
 tracker_ui.init(training_data);
 
@@ -168,7 +158,6 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     -- Check for Grounds Tome interaction - initialize tracking
     if string.find(msg, "A grounds tome has been placed here by the Adventurers' Mutual Aid Network %(A%.M%.A%.N%.%)") then
         training_data.is_active = true;
-        log_debug("Training activated");
     end
     
     -- Only process further messages if tracking is active
@@ -178,11 +167,6 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     
     -- Use stripped message for pattern matching (removes color codes)
     msg = msg_stripped;
-    
-    -- Log ALL messages while active (limit to prevent overflow)
-    if #debug_messages < 15 then
-        log_debug("MSG[mode=" .. tostring(e.mode) .. "]: " .. msg);
-    end
     
     -- Check for training selection start
     if string.find(msg, "The information on this page instructs you to defeat the following:") then
@@ -273,33 +257,21 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     -- Check for enemy defeat (two patterns)
     -- Pattern 1: "[Player] defeats the [Enemy Name]."
     -- Pattern 2: "The [Enemy Name] falls to the ground."
-    
-    -- Log any message with "defeat" or "falls"
-    if string.find(msg, "defeat") or string.find(msg, "falls") then
-        log_debug("Raw message: '" .. msg .. "'");
-    end
-    
     local defeated_enemy = nil;
     
     -- Try pattern 1: player defeats enemy
     defeated_enemy = string.match(msg, "defeats the (.-)%.");
-    log_debug("Pattern 1 check: " .. tostring(defeated_enemy));
     
     -- Try pattern 2: enemy falls to ground
     if not defeated_enemy then
         defeated_enemy = string.match(msg, "The (.-) falls to the ground%.");
-        log_debug("Pattern 2 check: " .. tostring(defeated_enemy));
     end
     
     if defeated_enemy then
-        log_debug("Enemy defeated: " .. defeated_enemy);
         -- Check if this enemy is in our tracking list
         local enemy, index = find_enemy_by_name(defeated_enemy);
         if enemy then
-            log_debug("Match found in list: " .. enemy.name);
             training_data.last_defeated_enemy = defeated_enemy;
-        else
-            log_debug("No match in list");
         end
         return;
     end
@@ -307,18 +279,13 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     -- Check for progress update (must follow an enemy defeat)
     -- Pattern: "You have defeated a designated target. (Progress: X/Y)"
     if string.find(msg, "designated target") then
-        log_debug("Progress message detected. Last defeated: " .. tostring(training_data.last_defeated_enemy));
         local current, total = string.match(msg, "Progress:%s*(%d+)/(%d+)");
         if current and total and training_data.last_defeated_enemy then
-            log_debug("Progress parsed: " .. current .. "/" .. total);
             local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
             if enemy then
-                log_debug("Updating enemy: " .. enemy.name);
                 enemy.killed = tonumber(current);
                 -- Save progress
                 save_training_data();
-            else
-                log_debug("Enemy not found for update");
             end
         end
         training_data.last_defeated_enemy = nil;  -- Reset after processing
@@ -367,32 +334,6 @@ ashita.events.register('command', 'command_cb', function (e)
     if args[2] == 'clear' then
         clear_training_data();
         print('[AMANTracker] Training data cleared and saved.');
-        return;
-    end
-    
-    -- Debug: dump current state
-    if args[2] == 'debug' then
-        print('[AMANTracker] === Debug Info ===');
-        print(string.format('Active: %s', tostring(training_data.is_active)));
-        print(string.format('Parsing: %s', tostring(training_data.is_parsing)));
-        print(string.format('Level Range: %s', training_data.target_level_range or 'none'));
-        print(string.format('Zone: %s', training_data.training_area_zone or 'none'));
-        print(string.format('Last Defeated: %s', training_data.last_defeated_enemy or 'none'));
-        print(string.format('Enemy Count: %d', #training_data.enemies));
-        for i, enemy in ipairs(training_data.enemies) do
-            print(string.format('  Enemy %d: [%d/%d] %s', i, enemy.killed or 0, enemy.total, enemy.name));
-        end
-        print('[AMANTracker] === Recent Messages ===');
-        for i, msg in ipairs(debug_messages) do
-            print(msg);
-        end
-        return;
-    end
-    
-    -- Clear debug log
-    if args[2] == 'clearlog' then
-        debug_messages = {};
-        print('[AMANTracker] Debug log cleared.');
         return;
     end
     
