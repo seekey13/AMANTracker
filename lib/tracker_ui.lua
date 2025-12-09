@@ -100,8 +100,20 @@ function tracker_ui.render()
         return;
     end
     
-    -- Set window size constraints (width adjustable, height auto-sized)
-    imgui.SetNextWindowSizeConstraints({ MIN_WINDOW_WIDTH, -1 }, { MAX_WINDOW_WIDTH, -1 });
+    -- Calculate window height based on content
+    local line_height = imgui.GetTextLineHeightWithSpacing();
+    local separator_height = 8; -- Approximate height of separator
+    local padding = 20; -- Window padding
+    local progress_bar_height = 24; -- Height of progress bar
+    
+    -- Content: Training Area (1 line) + Separator + Enemies (name + progress bar per enemy) + Separator + Level Range (1 line)
+    local num_enemies = #training_data.enemies;
+    local calculated_height = padding + line_height + separator_height + 
+                              (num_enemies * (line_height + progress_bar_height)) + 
+                              separator_height + line_height + padding;
+    
+    -- Set window size constraints (width adjustable, height fixed)
+    imgui.SetNextWindowSizeConstraints({ MIN_WINDOW_WIDTH, calculated_height }, { MAX_WINDOW_WIDTH, calculated_height });
     
     if imgui.Begin('AMAN Tracker', ui_visible) then
         -- Training Area
