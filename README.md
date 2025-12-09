@@ -2,6 +2,9 @@
 
 AMANTracker is an Ashita v4 addon for Final Fantasy XI that provides a GUI tracker for Adventurers' Mutual Aid Network (A.M.A.N.) Training Regimes, displaying real-time progress for your active training targets.
 
+<img width="419" height="192" alt="image" src="https://github.com/user-attachments/assets/55408491-a689-4c94-b8e9-545d010b5282" />
+
+
 > **Note:**  
 > This addon was designed **EXCLUSIVELY** for the [CatsEyeXI private server](https://www.catseyexi.com/) and may not function as intended on retail or other private servers.  The message formats and mechanics are only tested specifically for CatsEyeXI.
 
@@ -70,7 +73,7 @@ AMANTracker is an Ashita v4 addon for Final Fantasy XI that provides a GUI track
 
 ## Data Storage
 
-Settings saved to: `Ashita/config/addons/AMANTracker/settings.json`
+Settings saved to: `~\Ashita\config\addons\AMANTracker\[character_name]\settings.lua`
 
 Stored data includes:
 - Active training state
