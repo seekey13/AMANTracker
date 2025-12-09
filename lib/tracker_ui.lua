@@ -56,6 +56,20 @@ function tracker_ui.toggle()
     ui_visible[1] = not ui_visible[1];
 end
 
+-- Helper function to display a field with fallback to "None" text
+-- Args:
+--   label (string) - The label for the field
+--   value (any) - The value to display (nil shows as disabled "None")
+--   format_string (string, optional) - Format string with %s placeholder for value
+local function display_field(label, value, format_string)
+    if value then
+        local display_text = format_string and string.format(format_string, value) or string.format('%s: %s', label, value);
+        imgui.Text(display_text);
+    else
+        imgui.TextDisabled(string.format('%s: None', label));
+    end
+end
+
 -- Render the tracker UI (call from d3d_present event)
 function tracker_ui.render()
     if not ui_visible[1] then
@@ -76,11 +90,7 @@ function tracker_ui.render()
     
     if imgui.Begin('AMAN Tracker', ui_visible, ImGuiWindowFlags_AlwaysAutoResize) then
         -- Training Area
-        if training_data.training_area_zone then
-            imgui.Text(string.format('Training Area: %s', training_data.training_area_zone));
-        else
-            imgui.TextDisabled('Training Area: None');
-        end
+        display_field('Training Area', training_data.training_area_zone);
         
         imgui.Separator();
         
@@ -105,11 +115,7 @@ function tracker_ui.render()
         imgui.Separator();
         
         -- Target Level Range
-        if training_data.target_level_range then
-            imgui.Text(string.format('Level Range: %s', training_data.target_level_range));
-        else
-            imgui.TextDisabled('Level Range: None');
-        end
+        display_field('Level Range', training_data.target_level_range);
     end
     imgui.End();
 end
