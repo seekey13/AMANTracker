@@ -19,9 +19,9 @@ local training_data = nil;
 -- UI Constants
 -- ============================================================================
 
-local MIN_WINDOW_WIDTH = 500;
+local MIN_WINDOW_WIDTH = 300;
 local MIN_WINDOW_HEIGHT = 150;
-local MAX_WINDOW_WIDTH = 700;
+local MAX_WINDOW_WIDTH = 300;
 local MAX_WINDOW_HEIGHT = 400;
 
 -- ============================================================================
@@ -77,22 +77,28 @@ function tracker_ui.render()
             imgui.TextColored({ 1.0, 0.5, 0.0, 1.0 }, 'Status: Inactive');
         end
         
+        -- Training Area
+        if training_data.training_area_zone then
+            imgui.Text(string.format('Training Area: %s', training_data.training_area_zone));
+        else
+            imgui.TextDisabled('Training Area: None');
+        end
+        
         imgui.Separator();
         
         -- Display all enemies
         if training_data.enemies and #training_data.enemies > 0 then
             for i, enemy in ipairs(training_data.enemies) do
                 local killed_count = enemy.killed or 0;
-                local progress_percent = (killed_count / enemy.total) * 100;
+                local progress_fraction = killed_count / enemy.total;
                 
-                -- Color code based on completion
-                if killed_count >= enemy.total then
-                    imgui.TextColored({ 0.0, 1.0, 0.0, 1.0 }, string.format('[%d/%d] %s (Complete!)', killed_count, enemy.total, enemy.name));
-                elseif killed_count > 0 then
-                    imgui.TextColored({ 1.0, 1.0, 0.0, 1.0 }, string.format('[%d/%d] %s (%.0f%%)', killed_count, enemy.total, enemy.name, progress_percent));
-                else
-                    imgui.Text(string.format('[%d/%d] %s', killed_count, enemy.total, enemy.name));
-                end
+                -- Enemy name (left justified)
+                imgui.Text(enemy.name);
+                
+                -- Progress bar with count overlay
+                imgui.PushStyleColor(ImGuiCol_PlotHistogram, { 0.2, 0.8, 0.2, 1.0 });
+                imgui.ProgressBar(progress_fraction, { -1, 0 }, string.format('%d/%d', killed_count, enemy.total));
+                imgui.PopStyleColor(1);
             end
         else
             imgui.TextDisabled('Enemies: None');
@@ -105,26 +111,6 @@ function tracker_ui.render()
             imgui.Text(string.format('Level Range: %s', training_data.target_level_range));
         else
             imgui.TextDisabled('Level Range: None');
-        end
-        
-        -- Training Area
-        if training_data.training_area_zone then
-            imgui.Text(string.format('Training Area: %s', training_data.training_area_zone));
-        else
-            imgui.TextDisabled('Training Area: None');
-        end
-        
-        imgui.Separator();
-        
-        -- Parsing indicator
-        if training_data.is_parsing then
-            imgui.TextColored({ 1.0, 1.0, 0.0, 1.0 }, 'Parsing training data...');
-        end
-        
-        -- Last defeated enemy (debug info)
-        if training_data.last_defeated_enemy then
-            imgui.Separator();
-            imgui.TextColored({ 0.5, 0.5, 1.0, 1.0 }, string.format('Last Defeated: %s', training_data.last_defeated_enemy));
         end
     end
     imgui.End();
