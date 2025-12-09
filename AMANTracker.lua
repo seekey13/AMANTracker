@@ -152,14 +152,161 @@ local function parse_training_area(line)
     return area;
 end
 
+-- Message handler functions
+local function handle_tome_interaction()
+    training_data.is_active = true;
+end
+
+local function handle_training_start()
+    training_data.is_parsing = true;
+    clear_training_data();
+    training_data.is_active = true;
+    training_data.is_parsing = true;
+end
+
+local function handle_level_range(msg)
+    local level_range = parse_level_range(msg);
+    if level_range then
+        training_data.target_level_range = level_range;
+        training_data.is_parsing = false;
+        return true;
+    end
+    return false;
+end
+
+local function handle_enemy_parsing(msg)
+    if #training_data.raw_enemy_lines == 0 then
+        table.insert(training_data.raw_enemy_lines, msg);
+        
+        local remaining_text = msg;
+        while true do
+            local count, name = string.match(remaining_text, "(%d+)%s+([^%.?]+)%.");
+            if not count or not name then
+                break;
+            end
+            
+            if not string.find(name, "Target level range") and not string.find(name, "Training area") then
+                table.insert(training_data.enemies, {total = tonumber(count), killed = 0, name = name});
+            end
+            
+            local pattern = count .. "%s+" .. name:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1") .. "%.";
+            remaining_text = string.gsub(remaining_text, pattern, "", 1);
+        end
+    end
+end
+
+local function handle_training_area(msg)
+    if not training_data.is_parsing and training_data.target_level_range and not training_data.training_area_zone then
+        local training_area = parse_training_area(msg);
+        if training_area then
+            training_data.training_area_zone = training_area;
+            return true;
+        end
+    end
+    return false;
+end
+
+local function handle_regime_confirmation()
+    print("[AMANTracker] Training regime confirmed!");
+    local enemy_str = "";
+    for i, enemy in ipairs(training_data.enemies) do
+        if i > 1 then enemy_str = enemy_str .. ", " end
+        enemy_str = enemy_str .. string.format("%d %s", enemy.total, enemy.name);
+    end
+    print(string.format("[AMANTracker] Active Training: %s in %s (Level %s)", 
+        enemy_str ~= "" and enemy_str or "Unknown",
+        training_data.training_area_zone or "Unknown",
+        training_data.target_level_range or "Unknown"));
+    save_training_data();
+end
+
+local function handle_regime_cancellation()
+    clear_training_data();
+end
+
+local function handle_regime_reset()
+    for i, enemy in ipairs(training_data.enemies) do
+        enemy.killed = 0;
+    end
+    save_training_data();
+end
+
+local function handle_enemy_defeat(msg)
+    local defeated_enemy = string.match(msg, "defeats the (.-)%.");
+    if not defeated_enemy then
+        defeated_enemy = string.match(msg, "The (.-) falls to the ground%.");
+    end
+    
+    if defeated_enemy then
+        local enemy, index = find_enemy_by_name(defeated_enemy);
+        if enemy then
+            training_data.last_defeated_enemy = defeated_enemy;
+        end
+        return true;
+    end
+    return false;
+end
+
+local function handle_progress_update(msg)
+    local current, total = string.match(msg, "Progress:%s*(%d+)/(%d+)");
+    if current and total and training_data.last_defeated_enemy then
+        local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
+        if enemy then
+            enemy.killed = tonumber(current);
+            save_training_data();
+        end
+    end
+    training_data.last_defeated_enemy = nil;
+end
+
+-- Message handler dispatch table
+local message_handlers = {
+    {
+        pattern = "A grounds tome has been placed here by the Adventurers' Mutual Aid Network %(A%.M%.A%.N%.%)",
+        handler = handle_tome_interaction,
+        check_active = false
+    },
+    {
+        pattern = "The information on this page instructs you to defeat the following:",
+        handler = handle_training_start,
+        check_active = true
+    },
+    {
+        pattern = "New training regime registered!",
+        handler = handle_regime_confirmation,
+        check_active = true
+    },
+    {
+        pattern = "Training regime canceled%.",
+        handler = handle_regime_cancellation,
+        check_active = true
+    },
+    {
+        pattern = "Your current training regime will begin anew!",
+        handler = handle_regime_reset,
+        check_active = true
+    },
+    {
+        pattern = "designated target",
+        handler = handle_progress_update,
+        check_active = true
+    }
+};
+
 -- Event: Incoming text (chat messages)
 ashita.events.register('text_in', 'text_in_cb', function (e)
     local msg = e.message;
     local msg_stripped = msg:strip_colors();
     
-    -- Check for Grounds Tome interaction - initialize tracking
-    if string.find(msg, "A grounds tome has been placed here by the Adventurers' Mutual Aid Network %(A%.M%.A%.N%.%)") then
-        training_data.is_active = true;
+    -- Process message handlers
+    for _, handler_info in ipairs(message_handlers) do
+        if string.find(msg, handler_info.pattern) then
+            -- Check if handler requires active training
+            if not handler_info.check_active or training_data.is_active then
+                handler_info.handler(msg_stripped);
+                return;
+            end
+        end
     end
     
     -- Only process further messages if tracking is active
@@ -167,130 +314,24 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
         return;
     end
     
-    -- Use stripped message for pattern matching (removes color codes)
     msg = msg_stripped;
     
-    -- Check for training selection start
-    if string.find(msg, "The information on this page instructs you to defeat the following:") then
-        training_data.is_parsing = true;
-        clear_training_data();
-        training_data.is_active = true;
-        training_data.is_parsing = true;
-        return;
-    end
-    -- Parse enemy and training details while in parsing mode
+    -- Handle parsing mode
     if training_data.is_parsing then
-        -- Check if we hit the level range line - this ends enemy parsing
-        local level_range = parse_level_range(msg);
-        if level_range then
-            training_data.target_level_range = level_range;
-            training_data.is_parsing = false;  -- Stop parsing enemies
+        if handle_level_range(msg) then
             return;
         end
-        
-        -- Store only the first raw line for debugging
-        if #training_data.raw_enemy_lines == 0 then
-            table.insert(training_data.raw_enemy_lines, msg);
-            
-            -- Parse all enemies from this first line only
-            local remaining_text = msg;
-            while true do
-                local count, name = string.match(remaining_text, "(%d+)%s+([^%.?]+)%.");
-                if not count or not name then
-                    break;  -- No more enemies found
-                end
-                
-                -- Check if this is not a level range or training area
-                if not string.find(name, "Target level range") and not string.find(name, "Training area") then
-                    table.insert(training_data.enemies, {total = tonumber(count), killed = 0, name = name});
-                end
-                
-                -- Remove this enemy from the remaining text
-                local pattern = count .. "%s+" .. name:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1") .. "%.";
-                remaining_text = string.gsub(remaining_text, pattern, "", 1);
-            end
-        end
+        handle_enemy_parsing(msg);
         return;
     end
     
-    -- Parse training area (after level range, outside parsing mode)
-    if not training_data.is_parsing and training_data.target_level_range and not training_data.training_area_zone then
-        local training_area = parse_training_area(msg);
-        if training_area then
-            training_data.training_area_zone = training_area;
-            return;
-        end
-    end
-    
-    -- Check for training confirmation
-    if string.find(msg, "New training regime registered!") then
-        print("[AMANTracker] Training regime confirmed!");
-        local enemy_str = "";
-        for i, enemy in ipairs(training_data.enemies) do
-            if i > 1 then enemy_str = enemy_str .. ", " end
-            enemy_str = enemy_str .. string.format("%d %s", enemy.total, enemy.name);
-        end
-        print(string.format("[AMANTracker] Active Training: %s in %s (Level %s)", 
-            enemy_str ~= "" and enemy_str or "Unknown",
-            training_data.training_area_zone or "Unknown",
-            training_data.target_level_range or "Unknown"));
-        
-        -- Save the confirmed training data
-        save_training_data();
+    -- Handle training area parsing
+    if handle_training_area(msg) then
         return;
     end
     
-    -- Check for training cancellation
-    if string.find(msg, "Training regime canceled%.") then
-        clear_training_data();
-        return;
-    end
-    
-    -- Check for training completion and reset
-    if string.find(msg, "Your current training regime will begin anew!") then
-        -- Reset all kill counts to 0
-        for i, enemy in ipairs(training_data.enemies) do
-            enemy.killed = 0;
-        end
-        save_training_data();
-        return;
-    end
-    
-    -- Check for enemy defeat (two patterns)
-    -- Pattern 1: "[Player] defeats the [Enemy Name]."
-    -- Pattern 2: "The [Enemy Name] falls to the ground."
-    local defeated_enemy = nil;
-    
-    -- Try pattern 1: player defeats enemy
-    defeated_enemy = string.match(msg, "defeats the (.-)%.");
-    
-    -- Try pattern 2: enemy falls to ground
-    if not defeated_enemy then
-        defeated_enemy = string.match(msg, "The (.-) falls to the ground%.");
-    end
-    
-    if defeated_enemy then
-        -- Check if this enemy is in our tracking list
-        local enemy, index = find_enemy_by_name(defeated_enemy);
-        if enemy then
-            training_data.last_defeated_enemy = defeated_enemy;
-        end
-        return;
-    end
-    
-    -- Check for progress update (must follow an enemy defeat)
-    -- Pattern: "You have defeated a designated target. (Progress: X/Y)"
-    if string.find(msg, "designated target") then
-        local current, total = string.match(msg, "Progress:%s*(%d+)/(%d+)");
-        if current and total and training_data.last_defeated_enemy then
-            local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
-            if enemy then
-                enemy.killed = tonumber(current);
-                -- Save progress
-                save_training_data();
-            end
-        end
-        training_data.last_defeated_enemy = nil;  -- Reset after processing
+    -- Handle enemy defeat
+    if handle_enemy_defeat(msg) then
         return;
     end
 end);
