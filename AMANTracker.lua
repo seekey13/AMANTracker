@@ -20,6 +20,30 @@ local parser = require('lib.parser');
 -- Load UI module
 local tracker_ui = require('lib.tracker_ui');
 
+-- ============================================================================
+-- String Constants
+-- ============================================================================
+
+local MESSAGES = {
+    -- Game messages
+    TOME_PROMPT = "A grounds tome has been placed here by the Adventurers' Mutual Aid Network %(A%.M%.A%.N%.%)",
+    TRAINING_START = "The information on this page instructs you to defeat the following:",
+    REGIME_CONFIRMED = "New training regime registered!",
+    REGIME_CANCELED = "Training regime canceled%.",
+    REGIME_RESET = "Your current training regime will begin anew!",
+    DEFEAT_PATTERN_1 = "defeats the (.-)%.",
+    DEFEAT_PATTERN_2 = "The (.-) falls to the ground%.",
+    PROGRESS_KEYWORD = "designated target",
+    PROGRESS_PATTERN = "Progress:%s*(%d+)/(%d+)",
+    
+    -- Addon messages
+    ADDON_PREFIX = "[AMANTracker]",
+    RESTORED_HUNT = "Restored active hunt from saved data",
+    REGIME_CONFIRMED_MSG = "Training regime confirmed!",
+    ACTIVE_TRAINING_FMT = "Active Training: %s in %s (Level %s)",
+    DATA_CLEARED = "Training data cleared and saved.",
+};
+
 -- Default settings (structure for persistent data)
 local default_settings = T{
     is_active = false,
@@ -56,7 +80,7 @@ if saved_data.is_active then
     
     -- Print restoration message
     if #training_data.enemies > 0 then
-        print('[AMANTracker] Restored active hunt from saved data');
+        print(MESSAGES.ADDON_PREFIX .. ' ' .. MESSAGES.RESTORED_HUNT);
     end
 end
 
@@ -167,13 +191,13 @@ local function handle_training_area(msg)
 end
 
 local function handle_regime_confirmation()
-    print("[AMANTracker] Training regime confirmed!");
+    print(MESSAGES.ADDON_PREFIX .. ' ' .. MESSAGES.REGIME_CONFIRMED_MSG);
     local enemy_str = "";
     for i, enemy in ipairs(training_data.enemies) do
         if i > 1 then enemy_str = enemy_str .. ", " end
         enemy_str = enemy_str .. string.format("%d %s", enemy.total, enemy.name);
     end
-    print(string.format("[AMANTracker] Active Training: %s in %s (Level %s)", 
+    print(string.format(MESSAGES.ADDON_PREFIX .. ' ' .. MESSAGES.ACTIVE_TRAINING_FMT, 
         enemy_str ~= "" and enemy_str or "Unknown",
         training_data.training_area_zone or "Unknown",
         training_data.target_level_range or "Unknown"));
@@ -192,9 +216,9 @@ local function handle_regime_reset()
 end
 
 local function handle_enemy_defeat(msg)
-    local defeated_enemy = string.match(msg, "defeats the (.-)%.");
+    local defeated_enemy = string.match(msg, MESSAGES.DEFEAT_PATTERN_1);
     if not defeated_enemy then
-        defeated_enemy = string.match(msg, "The (.-) falls to the ground%.");
+        defeated_enemy = string.match(msg, MESSAGES.DEFEAT_PATTERN_2);
     end
     
     if defeated_enemy then
@@ -208,7 +232,7 @@ local function handle_enemy_defeat(msg)
 end
 
 local function handle_progress_update(msg)
-    local current, total = string.match(msg, "Progress:%s*(%d+)/(%d+)");
+    local current, total = string.match(msg, MESSAGES.PROGRESS_PATTERN);
     if current and total and training_data.last_defeated_enemy then
         local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
         if enemy then
@@ -222,32 +246,32 @@ end
 -- Message handler dispatch table
 local message_handlers = {
     {
-        pattern = "A grounds tome has been placed here by the Adventurers' Mutual Aid Network %(A%.M%.A%.N%.%)",
+        pattern = MESSAGES.TOME_PROMPT,
         handler = handle_tome_interaction,
         check_active = false
     },
     {
-        pattern = "The information on this page instructs you to defeat the following:",
+        pattern = MESSAGES.TRAINING_START,
         handler = handle_training_start,
         check_active = true
     },
     {
-        pattern = "New training regime registered!",
+        pattern = MESSAGES.REGIME_CONFIRMED,
         handler = handle_regime_confirmation,
         check_active = true
     },
     {
-        pattern = "Training regime canceled%.",
+        pattern = MESSAGES.REGIME_CANCELED,
         handler = handle_regime_cancellation,
         check_active = true
     },
     {
-        pattern = "Your current training regime will begin anew!",
+        pattern = MESSAGES.REGIME_RESET,
         handler = handle_regime_reset,
         check_active = true
     },
     {
-        pattern = "designated target",
+        pattern = MESSAGES.PROGRESS_KEYWORD,
         handler = handle_progress_update,
         check_active = true
     }
