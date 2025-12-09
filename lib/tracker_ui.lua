@@ -82,7 +82,17 @@ function tracker_ui.render()
         -- Display all enemies
         if training_data.enemies and #training_data.enemies > 0 then
             for i, enemy in ipairs(training_data.enemies) do
-                imgui.Text(string.format('Enemy %d: %d x %s', i, enemy.total, enemy.name));
+                local killed_count = enemy.killed or 0;
+                local progress_percent = (killed_count / enemy.total) * 100;
+                
+                -- Color code based on completion
+                if killed_count >= enemy.total then
+                    imgui.TextColored({ 0.0, 1.0, 0.0, 1.0 }, string.format('[%d/%d] %s (Complete!)', killed_count, enemy.total, enemy.name));
+                elseif killed_count > 0 then
+                    imgui.TextColored({ 1.0, 1.0, 0.0, 1.0 }, string.format('[%d/%d] %s (%.0f%%)', killed_count, enemy.total, enemy.name, progress_percent));
+                else
+                    imgui.Text(string.format('[%d/%d] %s', killed_count, enemy.total, enemy.name));
+                end
             end
         else
             imgui.TextDisabled('Enemies: None');
@@ -109,6 +119,12 @@ function tracker_ui.render()
         -- Parsing indicator
         if training_data.is_parsing then
             imgui.TextColored({ 1.0, 1.0, 0.0, 1.0 }, 'Parsing training data...');
+        end
+        
+        -- Last defeated enemy (debug info)
+        if training_data.last_defeated_enemy then
+            imgui.Separator();
+            imgui.TextColored({ 0.5, 0.5, 1.0, 1.0 }, string.format('Last Defeated: %s', training_data.last_defeated_enemy));
         end
     end
     imgui.End();
