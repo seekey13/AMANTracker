@@ -105,6 +105,8 @@ Open an issue or pull request on the [GitHub repository](https://github.com/seek
 [Commandobill](https://github.com/commandobill), [atom0s](https://github.com/atom0s), and [Carver](https://github.com/CatsEyeXI)
 
 Completely unnecessary AI generated image  
+<img width="400" alt="image" src="https://github.com/user-attachments/assets/46efa67b-61c2-4e39-a994-b4d6980d44a3" />
+
 
 ## Changelog
 
