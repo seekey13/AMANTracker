@@ -44,6 +44,14 @@ local MESSAGES = {
     DATA_CLEARED = "Training data cleared and saved.",
 };
 
+-- Persistent data field schema (fields that are saved to disk)
+local PERSISTENT_FIELDS = {
+    'is_active',
+    'enemies',
+    'target_level_range',
+    'training_area_zone',
+};
+
 -- Default settings (structure for persistent data)
 local default_settings = T{
     is_active = false,
@@ -68,10 +76,9 @@ local saved_data = settings.load(default_settings);
 
 -- Helper function to sync persistent data fields between tables
 local function sync_persistent_data(source, target)
-    target.is_active = source.is_active;
-    target.enemies = source.enemies;
-    target.target_level_range = source.target_level_range;
-    target.training_area_zone = source.training_area_zone;
+    for _, field in ipairs(PERSISTENT_FIELDS) do
+        target[field] = source[field];
+    end
 end
 
 -- Restore saved hunt data if it exists
@@ -89,10 +96,7 @@ tracker_ui.init(training_data);
 
 -- Helper function to save current hunt data
 local function save_training_data()
-    saved_data.is_active = training_data.is_active;
-    saved_data.enemies = training_data.enemies;
-    saved_data.target_level_range = training_data.target_level_range;
-    saved_data.training_area_zone = training_data.training_area_zone;
+    sync_persistent_data(training_data, saved_data);
     settings.save();
 end
 
