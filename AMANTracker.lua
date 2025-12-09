@@ -70,6 +70,9 @@ local training_data = {
     training_area_zone = nil,
     raw_enemy_lines = {},  -- Debug: capture all raw lines between markers
     last_defeated_enemy = nil,  -- Track last defeated enemy name for progress matching
+    regime_will_repeat = false,  -- Track if regime reset message was seen before completion
+    last_main_job = nil,  -- Track main job to detect job changes
+    last_sub_job = nil,  -- Track sub job to detect job changes
 };
 
 -- Load saved settings
@@ -89,6 +92,22 @@ if saved_data.is_active then
     -- Print restoration message
     if #training_data.enemies > 0 then
         print(MESSAGES.ADDON_PREFIX .. ' ' .. MESSAGES.RESTORED_HUNT);
+    end
+end
+
+-- Initialize job tracking
+local ok, player = pcall(function()
+    return AshitaCore:GetMemoryManager():GetPlayer();
+end);
+
+if ok and player then
+    local ok_jobs, main_job, sub_job = pcall(function()
+        return player:GetMainJob(), player:GetSubJob();
+    end);
+    
+    if ok_jobs then
+        training_data.last_main_job = main_job;
+        training_data.last_sub_job = sub_job;
     end
 end
 
@@ -122,6 +141,8 @@ local function clear_training_data()
     training_data.training_area_zone = nil;
     training_data.raw_enemy_lines = {};
     training_data.last_defeated_enemy = nil;
+    training_data.regime_will_repeat = false;
+    -- Note: last_main_job and last_sub_job are NOT cleared to maintain job tracking
     
     -- Save the cleared state
     save_training_data();
@@ -219,10 +240,21 @@ local function handle_regime_cancellation()
 end
 
 local function handle_regime_reset()
+    training_data.regime_will_repeat = true;
     for i, enemy in ipairs(training_data.enemies) do
         enemy.killed = 0;
     end
     save_training_data();
+end
+
+local function handle_regime_complete()
+    if training_data.regime_will_repeat then
+        -- Reset was seen before completion, just reset the flag
+        training_data.regime_will_repeat = false;
+    else
+        -- No reset message, regime is complete and won't repeat
+        clear_training_data();
+    end
 end
 
 local function handle_enemy_defeat(msg)
@@ -281,6 +313,11 @@ local message_handlers = {
         check_active = true
     },
     {
+        pattern = MESSAGES.REGIME_COMPLETE,
+        handler = handle_regime_complete,
+        check_active = true
+    },
+    {
         pattern = MESSAGES.PROGRESS_KEYWORD,
         handler = handle_progress_update,
         check_active = true
@@ -327,6 +364,45 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     -- Handle enemy defeat
     if handle_enemy_defeat(msg) then
         return;
+    end
+end);
+
+-- Helper function to check for job changes
+local function check_job_change()
+    local ok, player = pcall(function()
+        return AshitaCore:GetMemoryManager():GetPlayer();
+    end);
+    
+    if not ok or not player then
+        return;
+    end
+    
+    local ok_jobs, current_main_job, current_sub_job = pcall(function()
+        return player:GetMainJob(), player:GetSubJob();
+    end);
+    
+    if not ok_jobs then
+        return;
+    end
+    
+    -- Check if job changed (no initialization needed, done at load time)
+    if current_main_job ~= training_data.last_main_job or current_sub_job ~= training_data.last_sub_job then
+        -- Job changed - clear training data
+        if training_data.is_active then
+            clear_training_data();
+        end
+        training_data.last_main_job = current_main_job;
+        training_data.last_sub_job = current_sub_job;
+    end
+end
+
+-- Event: Packet incoming - detect job changes
+ashita.events.register('packet_in', 'packet_in_cb', function (e)
+    -- Packets 0x1B (job info), 0x44 (character update), 0x1A (party update)
+    if e.id == 0x1B or e.id == 0x44 or e.id == 0x1A then
+        ashita.tasks.once(0.5, function()
+            check_job_change();
+        end);
     end
 end);
 
