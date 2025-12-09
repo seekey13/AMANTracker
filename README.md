@@ -73,7 +73,7 @@ AMANTracker is an Ashita v4 addon for Final Fantasy XI that provides a GUI track
 
 ## Data Storage
 
-Settings saved to: `Ashita/config/addons/AMANTracker/settings.json`
+Settings saved to: `~\Ashita\config\addons\AMANTracker\[character_name]\settings.lua`
 
 Stored data includes:
 - Active training state
