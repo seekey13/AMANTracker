@@ -66,17 +66,15 @@ function tracker_ui.render()
         return;
     end
     
+    -- Only show UI when training is active
+    if not training_data.is_active then
+        return;
+    end
+    
     -- Set window flags for auto-sizing
     imgui.SetNextWindowSizeConstraints({ MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT }, { MAX_WINDOW_WIDTH, MAX_WINDOW_HEIGHT });
     
     if imgui.Begin('AMAN Tracker', ui_visible, ImGuiWindowFlags_AlwaysAutoResize) then
-        -- Status
-        if training_data.is_active then
-            imgui.TextColored({ 0.0, 1.0, 0.0, 1.0 }, 'Status: Active');
-        else
-            imgui.TextColored({ 1.0, 0.5, 0.0, 1.0 }, 'Status: Inactive');
-        end
-        
         -- Training Area
         if training_data.training_area_zone then
             imgui.Text(string.format('Training Area: %s', training_data.training_area_zone));
