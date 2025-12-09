@@ -70,6 +70,18 @@ local function display_field(label, value, format_string)
     end
 end
 
+-- Helper function to render a styled progress bar
+-- Args:
+--   fraction (number) - Progress fraction (0.0 to 1.0)
+--   label (string) - Label text to display on the progress bar
+--   color (table, optional) - RGBA color table {r, g, b, a}, defaults to green
+local function render_progress_bar(fraction, label, color)
+    local bar_color = color or { 0.2, 0.8, 0.2, 1.0 };
+    imgui.PushStyleColor(ImGuiCol_PlotHistogram, bar_color);
+    imgui.ProgressBar(fraction, { -1, 0 }, label);
+    imgui.PopStyleColor(1);
+end
+
 -- Render the tracker UI (call from d3d_present event)
 function tracker_ui.render()
     if not ui_visible[1] then
@@ -104,9 +116,7 @@ function tracker_ui.render()
                 imgui.Text(enemy.name);
                 
                 -- Progress bar with count overlay
-                imgui.PushStyleColor(ImGuiCol_PlotHistogram, { 0.2, 0.8, 0.2, 1.0 });
-                imgui.ProgressBar(progress_fraction, { -1, 0 }, string.format('%d/%d', killed_count, enemy.total));
-                imgui.PopStyleColor(1);
+                render_progress_bar(progress_fraction, string.format('%d/%d', killed_count, enemy.total));
             end
         else
             imgui.TextDisabled('Enemies: None');
