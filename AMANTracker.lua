@@ -149,6 +149,11 @@ local function find_enemy_by_name(enemy_name)
     return nil, nil;
 end
 
+-- Helper function to validate training state
+local function is_training_valid()
+    return training_data and training_data.is_active;
+end
+
 -- Message handler functions
 local function handle_tome_interaction()
     training_data.is_active = true;
@@ -290,7 +295,7 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     for _, handler_info in ipairs(message_handlers) do
         if string.find(msg, handler_info.pattern) then
             -- Check if handler requires active training
-            if not handler_info.check_active or training_data.is_active then
+            if not handler_info.check_active or is_training_valid() then
                 handler_info.handler(msg_stripped);
                 return;
             end
@@ -298,7 +303,7 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     end
     
     -- Only process further messages if tracking is active
-    if not training_data.is_active then
+    if not is_training_valid() then
         return;
     end
     
