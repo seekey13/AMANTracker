@@ -22,6 +22,12 @@ function parser.parse_training_area(line)
     return area;
 end
 
+-- Check if a line should be excluded from enemy parsing
+-- Returns: true if line contains metadata (level range or training area)
+local function should_exclude_line(text)
+    return string.find(text, "Target level range") or string.find(text, "Training area");
+end
+
 -- Parse enemies from a line containing multiple enemy entries
 -- Returns: array of {total, killed, name} tables
 function parser.parse_enemies(line)
@@ -35,7 +41,7 @@ function parser.parse_enemies(line)
         end
         
         -- Exclude level range and training area entries
-        if not string.find(name, "Target level range") and not string.find(name, "Training area") then
+        if not should_exclude_line(name) then
             table.insert(enemies, {
                 total = tonumber(count),
                 killed = 0,
@@ -60,7 +66,7 @@ end
 -- Parse single enemy line (legacy format - now unused but kept for compatibility)
 -- Returns: count (number), name (string) or nil, nil
 function parser.parse_enemy_line(line)
-    if string.find(line, "Target level range:") or string.find(line, "Training area:") then
+    if should_exclude_line(line) then
         return nil, nil;
     end
     
