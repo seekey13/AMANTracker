@@ -330,6 +330,24 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     end
 end);
 
+-- Command handler
+ashita.events.register('command', 'command_cb', function (e)
+    local args = e.command:args();
+    if #args == 0 or args[1] ~= '/at' then
+        return;
+    end
+    
+    -- Block the command from being sent to the game
+    e.blocked = true;
+    
+    -- Handle subcommands
+    if #args == 1 or args[2] == 'ui' then
+        tracker_ui.toggle();
+        local status = tracker_ui.is_visible() and "opened" or "closed";
+        print(string.format("%s UI %s", MESSAGES.ADDON_PREFIX, status));
+    end
+end);
+
 -- Event: Render UI
 ashita.events.register('d3d_present', 'd3d_present_cb', function ()
     tracker_ui.render();
