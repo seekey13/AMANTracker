@@ -70,7 +70,6 @@ local training_data = {
     training_area_zone = nil,
     raw_enemy_lines = {},  -- Debug: capture all raw lines between markers
     last_defeated_enemy = nil,  -- Track last defeated enemy name for progress matching
-    regime_will_repeat = false,  -- Track if regime reset message was seen before completion
 };
 
 -- Load saved settings
@@ -123,7 +122,6 @@ local function clear_training_data()
     training_data.training_area_zone = nil;
     training_data.raw_enemy_lines = {};
     training_data.last_defeated_enemy = nil;
-    training_data.regime_will_repeat = false;
     
     -- Save the cleared state
     save_training_data();
@@ -221,21 +219,10 @@ local function handle_regime_cancellation()
 end
 
 local function handle_regime_reset()
-    training_data.regime_will_repeat = true;
     for i, enemy in ipairs(training_data.enemies) do
         enemy.killed = 0;
     end
     save_training_data();
-end
-
-local function handle_regime_complete()
-    if training_data.regime_will_repeat then
-        -- Reset was seen before completion, just reset the flag
-        training_data.regime_will_repeat = false;
-    else
-        -- No reset message, regime is complete and won't repeat
-        clear_training_data();
-    end
 end
 
 local function handle_enemy_defeat(msg)
@@ -291,11 +278,6 @@ local message_handlers = {
     {
         pattern = MESSAGES.REGIME_RESET,
         handler = handle_regime_reset,
-        check_active = true
-    },
-    {
-        pattern = MESSAGES.REGIME_COMPLETE,
-        handler = handle_regime_complete,
         check_active = true
     },
     {
