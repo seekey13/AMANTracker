@@ -14,6 +14,7 @@ addon.desc      = 'GUI Tracker for Adventurers Mutual Aid Network Training Regim
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
 require('common');
+local chat = require('chat')
 local settings = require('settings');
 local parser = require('lib.parser');
 
@@ -22,6 +23,11 @@ local tracker_ui = require('lib.tracker_ui');
 
 -- Load packet handler module
 local packet_handler = require('lib.packet_handler');
+
+-- Custom print functions for categorized output.
+local function printf(fmt, ...)  print(chat.header(addon.name) .. chat.message(fmt:format(...))) end
+local function warnf(fmt, ...)   print(chat.header(addon.name) .. chat.warning(fmt:format(...))) end
+local function errorf(fmt, ...)  print(chat.header(addon.name) .. chat.error  (fmt:format(...))) end
 
 -- ============================================================================
 -- String Constants
@@ -41,9 +47,9 @@ local MESSAGES = {
     PROGRESS_PATTERN = "Progress:%s*(%d+)/(%d+)",
     
     -- Addon messages
-    ADDON_PREFIX = "[AMANTracker]",
     RESTORED_HUNT = "Restored active hunt from saved data",
     REGIME_CONFIRMED_MSG = "Training regime confirmed!",
+    REGIME_COMPLETED_MSG = "Training regime completed!",
     ACTIVE_TRAINING_FMT = "Active Training: %s in %s (Level %s)",
     DATA_CLEARED = "Training data cleared and saved.",
 };
@@ -92,7 +98,7 @@ if saved_data.is_active then
     
     -- Print restoration message
     if #training_data.enemies > 0 then
-        print(MESSAGES.ADDON_PREFIX .. ' ' .. MESSAGES.RESTORED_HUNT);
+        printf(MESSAGES.RESTORED_HUNT);
     end
 end
 
@@ -214,7 +220,7 @@ local function handle_regime_confirmation()
     print(string.format(MESSAGES.ADDON_PREFIX .. ' ' .. MESSAGES.ACTIVE_TRAINING_FMT, 
         enemy_str ~= "" and enemy_str or "Unknown",
         training_data.training_area_zone or "Unknown",
-        training_data.target_level_range or "Unknown"));
+        training_data.target_level_range or "Unknown");
     save_training_data();
 end
 
@@ -345,9 +351,7 @@ packet_handler.init({
     end,
     on_regime_complete = function()
         if is_training_valid() then
-            -- Regime completed, but we don't auto-clear anymore
-            -- Just log it for now
-            print(MESSAGES.ADDON_PREFIX .. ' Training regime completed!');
+            printf(MESSAGES.REGIME_COMPLETED_MSG);
         end
     end,
     on_regime_reset = function()
@@ -419,7 +423,10 @@ ashita.events.register('command', 'command_cb', function (e)
     if #args == 1 or args[2] == 'ui' then
         tracker_ui.toggle();
         local status = tracker_ui.is_visible() and "opened" or "closed";
-        print(string.format("%s UI %s", MESSAGES.ADDON_PREFIX, status));
+        printf('UI %s', status);
+    elseif args[2] == 'clear' then
+        clear_training_data();
+        printf(MESSAGES.DATA_CLEARED);
     end
 end);
 
