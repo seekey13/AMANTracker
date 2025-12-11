@@ -17,6 +17,7 @@ require('common');
 local chat = require('chat')
 local settings = require('settings');
 local parser = require('lib.parser');
+local family = require('lib.family');
 
 -- Load UI module
 local tracker_ui = require('lib.tracker_ui');
@@ -65,7 +66,7 @@ local PERSISTENT_FIELDS = {
 -- Default settings (structure for persistent data)
 local default_settings = T{
     is_active = false,
-    enemies = {},  -- Array of {total, killed, name} tables
+    enemies = {},  -- Array of {total, killed, name, match_type} tables
     target_level_range = nil,
     training_area_zone = nil,
 };
@@ -74,7 +75,7 @@ local default_settings = T{
 local training_data = {
     is_active = false,
     is_parsing = false,
-    enemies = {},  -- Array of {total, killed, name} tables
+    enemies = {},  -- Array of {total, killed, name, match_type} tables ('exact' or 'family')
     target_level_range = nil,
     training_area_zone = nil,
     raw_enemy_lines = {},  -- Debug: capture all raw lines between markers
@@ -138,25 +139,77 @@ local function clear_training_data()
 end
 
 -- Helper function to find enemy in tracking list by name
--- Handles both singular and plural forms
+-- Handles both singular and plural forms, as well as family matching
 local function find_enemy_by_name(enemy_name)
+    printf('=== Searching for "%s" in %d tracked enemies ===', enemy_name, #training_data.enemies);
+    
     for i, enemy in ipairs(training_data.enemies) do
-        -- Exact match
-        if enemy.name == enemy_name then
-            return enemy, i;
-        end
+        printf('  [%d] Checking against: "%s" (match_type: %s)', i, enemy.name, enemy.match_type or 'unknown');
         
-        -- Try singular to plural match (defeat message is singular, list might be plural)
-        -- Simple pluralization: add 's'
-        if enemy.name == enemy_name .. "s" then
-            return enemy, i;
-        end
-        
-        -- Try plural to singular match (list is plural, message might be singular)
-        if enemy.name:sub(-1) == "s" and enemy.name:sub(1, -2) == enemy_name then
-            return enemy, i;
+        -- Use match_type to optimize matching
+        if enemy.match_type == 'family' then
+            -- Family matching
+            local family_type = family.extract_family_type(enemy.name);
+            if family_type then
+                printf('  -> Checking family membership for "%s" family', family_type);
+                if family.is_family_member(enemy_name, family_type) then
+                    printf('  -> Match! "%s" is a member of "%s" family', enemy_name, family_type);
+                    return enemy, i;
+                else
+                    printf('  -> Not a member of "%s" family', family_type);
+                end
+            end
+        elseif enemy.match_type == 'exact' then
+            -- Exact match
+            if enemy.name == enemy_name then
+                printf('  -> Exact match found!');
+                return enemy, i;
+            end
+            
+            -- Try singular to plural match (defeat message is singular, list might be plural)
+            if enemy.name == enemy_name .. "s" then
+                printf('  -> Plural match found!');
+                return enemy, i;
+            end
+            
+            -- Try plural to singular match (list is plural, message might be singular)
+            if enemy.name:sub(-1) == "s" and enemy.name:sub(1, -2) == enemy_name then
+                printf('  -> Singular match found!');
+                return enemy, i;
+            end
+        else
+            -- Legacy support: no match_type specified, try all methods
+            printf('  -> Legacy mode: trying all match methods');
+            
+            -- Exact match
+            if enemy.name == enemy_name then
+                printf('  -> Exact match found!');
+                return enemy, i;
+            end
+            
+            -- Check if enemy.name is a family pattern
+            local family_type = family.extract_family_type(enemy.name);
+            if family_type then
+                printf('  -> Family pattern detected: "%s"', family_type);
+                if family.is_family_member(enemy_name, family_type) then
+                    printf('  -> Match! "%s" is a member of "%s" family', enemy_name, family_type);
+                    return enemy, i;
+                end
+            end
+            
+            -- Try singular/plural variations
+            if enemy.name == enemy_name .. "s" then
+                printf('  -> Plural match found!');
+                return enemy, i;
+            end
+            if enemy.name:sub(-1) == "s" and enemy.name:sub(1, -2) == enemy_name then
+                printf('  -> Singular match found!');
+                return enemy, i;
+            end
         end
     end
+    
+    printf('=== No match found for "%s" ===', enemy_name);
     return nil, nil;
 end
 
@@ -211,13 +264,14 @@ local function handle_training_area(msg)
 end
 
 local function handle_regime_confirmation()
-    print(MESSAGES.ADDON_PREFIX .. ' ' .. MESSAGES.REGIME_CONFIRMED_MSG);
+    print(MESSAGES.REGIME_CONFIRMED_MSG);
     local enemy_str = "";
     for i, enemy in ipairs(training_data.enemies) do
         if i > 1 then enemy_str = enemy_str .. ", " end
         enemy_str = enemy_str .. string.format("%d %s", enemy.total, enemy.name);
     end
-    print(string.format(MESSAGES.ADDON_PREFIX .. ' ' .. MESSAGES.ACTIVE_TRAINING_FMT, 
+    printf(MESSAGES.REGIME_CONFIRMED_MSG)
+    printf(MESSAGES.ACTIVE_TRAINING_FMT, 
         enemy_str ~= "" and enemy_str or "Unknown",
         training_data.training_area_zone or "Unknown",
         training_data.target_level_range or "Unknown");
@@ -253,9 +307,13 @@ local function handle_enemy_defeat(msg, from_packet, target_name)
     end
     
     if defeated_enemy then
+        printf('Enemy defeated: "%s" (from_packet=%s)', defeated_enemy, tostring(from_packet));
         local enemy, index = find_enemy_by_name(defeated_enemy);
         if enemy then
+            printf('Found matching tracked enemy: "%s"', enemy.name);
             training_data.last_defeated_enemy = defeated_enemy;
+        else
+            printf('No matching tracked enemy found for "%s"', defeated_enemy);
         end
         return true;
     end
@@ -265,6 +323,7 @@ end
 local function handle_progress_update(msg, from_packet, current, total)
     -- If from packet, use packet data directly
     if from_packet then
+        printf('Progress update: %d/%d (last_defeated_enemy="%s")', current, total, training_data.last_defeated_enemy or 'nil');
         -- Store packet progress to avoid duplicate processing from text
         training_data.last_packet_progress = {current = current, total = total};
         
@@ -272,6 +331,7 @@ local function handle_progress_update(msg, from_packet, current, total)
         if training_data.last_defeated_enemy then
             local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
             if enemy then
+                printf('Updating kill count for "%s": %d -> %d', enemy.name, enemy.killed, current);
                 enemy.killed = current;
                 save_training_data();
             end

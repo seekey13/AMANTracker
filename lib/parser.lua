@@ -4,6 +4,7 @@ Handles parsing of AMAN training regime messages
 ]]
 
 local parser = {};
+local family = require('lib.family');
 
 -- Parse level range (e.g., "Target level range: 48~49.")
 -- Returns: string formatted as "48~49" or nil
@@ -29,7 +30,7 @@ local function should_exclude_line(text)
 end
 
 -- Parse enemies from a line containing multiple enemy entries
--- Returns: array of {total, killed, name} tables
+-- Returns: array of {total, killed, name, match_type} tables
 function parser.parse_enemies(line)
     local enemies = {};
     local remaining_text = line;
@@ -42,10 +43,17 @@ function parser.parse_enemies(line)
         
         -- Exclude level range and training area entries
         if not should_exclude_line(name) then
+            -- Determine match type
+            local match_type = 'exact';
+            if family.is_family_pattern(name) then
+                match_type = 'family';
+            end
+            
             table.insert(enemies, {
                 total = tonumber(count),
                 killed = 0,
-                name = name
+                name = name,
+                match_type = match_type
             });
         end
         
