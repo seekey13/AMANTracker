@@ -26,7 +26,7 @@ local tracker_ui = require('lib.tracker_ui');
 
 local MESSAGES = {
     -- Game messages
-    TOME_PROMPT = "A grounds tome has been placed here by the Adventurers' Mutual Aid Network %(A%.M%.A%.N%.%)",
+    START_PROMPT = "has been placed here by the Adventurers' Mutual Aid Network %(A%.M%.A%.N%.%)",
     TRAINING_START = "The information on this page instructs you to defeat the following:",
     REGIME_CONFIRMED = "New training regime registered!",
     REGIME_CANCELED = "Training regime canceled%.",
@@ -71,8 +71,6 @@ local training_data = {
     raw_enemy_lines = {},  -- Debug: capture all raw lines between markers
     last_defeated_enemy = nil,  -- Track last defeated enemy name for progress matching
     regime_will_repeat = false,  -- Track if regime reset message was seen before completion
-    last_main_job = nil,  -- Track main job to detect job changes
-    last_sub_job = nil,  -- Track sub job to detect job changes
 };
 
 -- Load saved settings
@@ -92,22 +90,6 @@ if saved_data.is_active then
     -- Print restoration message
     if #training_data.enemies > 0 then
         print(MESSAGES.ADDON_PREFIX .. ' ' .. MESSAGES.RESTORED_HUNT);
-    end
-end
-
--- Initialize job tracking
-local ok, player = pcall(function()
-    return AshitaCore:GetMemoryManager():GetPlayer();
-end);
-
-if ok and player then
-    local ok_jobs, main_job, sub_job = pcall(function()
-        return player:GetMainJob(), player:GetSubJob();
-    end);
-    
-    if ok_jobs then
-        training_data.last_main_job = main_job;
-        training_data.last_sub_job = sub_job;
     end
 end
 
@@ -142,7 +124,6 @@ local function clear_training_data()
     training_data.raw_enemy_lines = {};
     training_data.last_defeated_enemy = nil;
     training_data.regime_will_repeat = false;
-    -- Note: last_main_job and last_sub_job are NOT cleared to maintain job tracking
     
     -- Save the cleared state
     save_training_data();
@@ -288,7 +269,7 @@ end
 -- Message handler dispatch table
 local message_handlers = {
     {
-        pattern = MESSAGES.TOME_PROMPT,
+        pattern = MESSAGES.START_PROMPT,
         handler = handle_tome_interaction,
         check_active = false
     },
@@ -364,55 +345,6 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     -- Handle enemy defeat
     if handle_enemy_defeat(msg) then
         return;
-    end
-end);
-
--- Helper function to check for job changes
-local function check_job_change()
-    local ok, player = pcall(function()
-        return AshitaCore:GetMemoryManager():GetPlayer();
-    end);
-    
-    if not ok or not player then
-        return;
-    end
-    
-    local ok_jobs, current_main_job, current_sub_job = pcall(function()
-        return player:GetMainJob(), player:GetSubJob();
-    end);
-    
-    if not ok_jobs then
-        return;
-    end
-    
-    -- Ignore nil job values (occurs during zoning)
-    if current_main_job == nil or current_sub_job == nil then
-        return;
-    end
-    
-    -- Ignore job ID 0 (uninitialized/loading state during zoning)
-    if current_main_job == 0 or current_sub_job == 0 then
-        return;
-    end
-    
-    -- Check if job changed (no initialization needed, done at load time)
-    if current_main_job ~= training_data.last_main_job or current_sub_job ~= training_data.last_sub_job then
-        -- Job changed - clear training data
-        if training_data.is_active then
-            clear_training_data();
-        end
-        training_data.last_main_job = current_main_job;
-        training_data.last_sub_job = current_sub_job;
-    end
-end
-
--- Event: Packet incoming - detect job changes
-ashita.events.register('packet_in', 'packet_in_cb', function (e)
-    -- Packets 0x1B (job info), 0x44 (character update), 0x1A (party update)
-    if e.id == 0x1B or e.id == 0x44 or e.id == 0x1A then
-        ashita.tasks.once(0.5, function()
-            check_job_change();
-        end);
     end
 end);
 
