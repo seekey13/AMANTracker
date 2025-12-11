@@ -56,6 +56,10 @@ local families = {
         includes = { "Sahagin" },
         excludes = { "Sahagin Parasite" }
     },
+    ["Bat"] = {
+        includes = { "Bat", "Bats", "Stirge", "Gaylas" },
+        excludes = { "Gigas's", "Goblin's" }
+    },
     ["Bats"] = {
         includes = { "Bat", "Bats", "Stirge", "Gaylas" },
         excludes = { "Gigas's", "Goblin's" }
@@ -83,20 +87,27 @@ local families = {
 -- @param family_type: The family type (e.g., "Goblin", "Pugil")
 -- @return: true if the enemy belongs to the family, false otherwise
 function family.is_family_member(enemy_name, family_type)
-    local family_def = families[family_type];
+    -- Try case-insensitive family lookup
+    local family_def = nil;
+    local actual_key = nil;
+    
+    for key, def in pairs(families) do
+        if key:lower() == family_type:lower() then
+            family_def = def;
+            actual_key = key;
+            break;
+        end
+    end
+    
     if not family_def then
-        print(string.format('[Family Debug] No family definition found for "%s"', family_type));
         return false;
     end
     
     local enemy_lower = enemy_name:lower();
-    print(string.format('[Family Debug] Checking "%s" against "%s" family', enemy_lower, family_type));
     
     -- Check exclusions first (exact match)
     for _, exclude_pattern in ipairs(family_def.excludes) do
-        print(string.format('[Family Debug]   Exclusion check: "%s" == "%s" ?', enemy_lower, exclude_pattern:lower()));
         if enemy_lower == exclude_pattern:lower() then
-            print(string.format('[Family Debug]   -> EXCLUDED (exact match)'));
             return false;
         end
     end
@@ -105,15 +116,12 @@ function family.is_family_member(enemy_name, family_type)
     for _, include_pattern in ipairs(family_def.includes) do
         local pattern_lower = include_pattern:lower();
         local found = enemy_lower:find(pattern_lower, 1, true);
-        print(string.format('[Family Debug]   Inclusion check: "%s" contains "%s" ? %s', enemy_lower, pattern_lower, tostring(found ~= nil)));
         if found then
-            print(string.format('[Family Debug]   -> MATCH FOUND at position %d', found));
             return true;
         end
     end
     
     -- No inclusion match found
-    print(string.format('[Family Debug] No match found for "%s" in "%s" family', enemy_lower, family_type));
     return false;
 end
 
@@ -123,11 +131,6 @@ end
 function family.extract_family_type(enemy_name)
     -- Try case-insensitive matching
     local family_type = enemy_name:match("^[Mm]embers of the (.+) [Ff]amily$");
-    if family_type then
-        print(string.format('[Family Debug] Extracted family type: "%s" from "%s"', family_type, enemy_name));
-    else
-        print(string.format('[Family Debug] No family pattern match for: "%s"', enemy_name));
-    end
     return family_type;
 end
 

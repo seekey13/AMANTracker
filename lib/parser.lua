@@ -47,9 +47,6 @@ function parser.parse_enemies(line)
             local match_type = 'exact';
             if family.is_family_pattern(name) then
                 match_type = 'family';
-                print(string.format('[Parser] Detected family pattern: "%s" -> match_type = family', name));
-            else
-                print(string.format('[Parser] Regular enemy: "%s" -> match_type = exact', name));
             end
             
             table.insert(enemies, {
