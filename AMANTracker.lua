@@ -487,6 +487,68 @@ ashita.events.register('command', 'command_cb', function (e)
     elseif args[2] == 'clear' then
         clear_training_data();
         printf(MESSAGES.DATA_CLEARED);
+    elseif args[2] == 'test' then
+        -- Test command: /at test <enemy_name>
+        if #args < 3 then
+            printf('Usage: /at test <enemy_name>');
+            printf('Example: /at test Giant Guard');
+            return;
+        end
+        
+        -- Get enemy name from args (join all args after 'test')
+        local test_enemy = table.concat(args, ' ', 3);
+        printf('===== TESTING ENEMY MATCH: "%s" =====', test_enemy);
+        
+        if not is_training_valid() or #training_data.enemies == 0 then
+            warnf('No active training regime to test against!');
+            return;
+        end
+        
+        printf('Current tracked enemies: %d', #training_data.enemies);
+        
+        -- Test against each tracked enemy
+        for i, enemy in ipairs(training_data.enemies) do
+            printf('');
+            printf('[%d] Testing against: "%s"', i, enemy.name);
+            printf('    Match type: %s', enemy.match_type or 'unknown');
+            printf('    Progress: %d/%d', enemy.killed, enemy.total);
+            
+            if enemy.match_type == 'family' then
+                local family_type = family.extract_family_type(enemy.name);
+                if family_type then
+                    printf('    Family type extracted: "%s"', family_type);
+                    local is_member = family.is_family_member(test_enemy, family_type);
+                    if is_member then
+                        printf('    ✓ MATCH: "%s" is a member of "%s" family', test_enemy, family_type);
+                    else
+                        printf('    ✗ NO MATCH: "%s" is not a member of "%s" family', test_enemy, family_type);
+                    end
+                else
+                    errorf('    ERROR: Could not extract family type from "%s"', enemy.name);
+                end
+            elseif enemy.match_type == 'exact' then
+                if enemy.name == test_enemy then
+                    printf('    ✓ MATCH: Exact match');
+                elseif enemy.name == test_enemy .. "s" then
+                    printf('    ✓ MATCH: Plural match');
+                elseif enemy.name:sub(-1) == "s" and enemy.name:sub(1, -2) == test_enemy then
+                    printf('    ✓ MATCH: Singular match');
+                else
+                    printf('    ✗ NO MATCH: Not an exact, plural, or singular match');
+                end
+            else
+                printf('    Testing with legacy mode...');
+                local matched, match_idx = find_enemy_by_name(test_enemy);
+                if matched then
+                    printf('    ✓ MATCH: Found via legacy matching');
+                else
+                    printf('    ✗ NO MATCH: No legacy match found');
+                end
+            end
+        end
+        
+        printf('');
+        printf('===== END TEST =====');
     end
 end);
 
