@@ -9,7 +9,7 @@ This addon is designed for Ashita v4.
 
 addon.name      = 'AMANTracker';
 addon.author    = 'Seekey';
-addon.version   = '1.1';
+addon.version   = '2.0';
 addon.desc      = 'GUI Tracker for Adventurers Mutual Aid Network Training Regimes';
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
@@ -19,6 +19,9 @@ local parser = require('lib.parser');
 
 -- Load UI module
 local tracker_ui = require('lib.tracker_ui');
+
+-- Load packet handler module
+local packet_handler = require('lib.packet_handler');
 
 -- ============================================================================
 -- String Constants
@@ -70,6 +73,7 @@ local training_data = {
     training_area_zone = nil,
     raw_enemy_lines = {},  -- Debug: capture all raw lines between markers
     last_defeated_enemy = nil,  -- Track last defeated enemy name for progress matching
+    last_packet_progress = nil,  -- Track last progress from packet to avoid duplicate text processing
 };
 
 -- Load saved settings
@@ -218,17 +222,28 @@ local function handle_regime_cancellation()
     clear_training_data();
 end
 
-local function handle_regime_reset()
+local function handle_regime_reset(from_packet)
     for i, enemy in ipairs(training_data.enemies) do
         enemy.killed = 0;
     end
+    training_data.last_packet_progress = nil;
     save_training_data();
+    
+    if not from_packet then
+        -- Text-based detection (fallback)
+        return;
+    end
 end
 
-local function handle_enemy_defeat(msg)
-    local defeated_enemy = string.match(msg, MESSAGES.DEFEAT_PATTERN_1);
-    if not defeated_enemy then
-        defeated_enemy = string.match(msg, MESSAGES.DEFEAT_PATTERN_2);
+local function handle_enemy_defeat(msg, from_packet, target_name)
+    local defeated_enemy = target_name;
+    
+    -- If not from packet, parse from text message
+    if not from_packet then
+        defeated_enemy = string.match(msg, MESSAGES.DEFEAT_PATTERN_1);
+        if not defeated_enemy then
+            defeated_enemy = string.match(msg, MESSAGES.DEFEAT_PATTERN_2);
+        end
     end
     
     if defeated_enemy then
@@ -241,13 +256,42 @@ local function handle_enemy_defeat(msg)
     return false;
 end
 
-local function handle_progress_update(msg)
-    local current, total = string.match(msg, MESSAGES.PROGRESS_PATTERN);
-    if current and total and training_data.last_defeated_enemy then
-        local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
-        if enemy then
-            enemy.killed = tonumber(current);
-            save_training_data();
+local function handle_progress_update(msg, from_packet, current, total)
+    -- If from packet, use packet data directly
+    if from_packet then
+        -- Store packet progress to avoid duplicate processing from text
+        training_data.last_packet_progress = {current = current, total = total};
+        
+        -- Find enemy and update kill count
+        if training_data.last_defeated_enemy then
+            local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
+            if enemy then
+                enemy.killed = current;
+                save_training_data();
+            end
+        end
+        training_data.last_defeated_enemy = nil;
+        return;
+    end
+    
+    -- Text-based processing (fallback)
+    local text_current, text_total = string.match(msg, MESSAGES.PROGRESS_PATTERN);
+    if text_current and text_total then
+        -- Check if this matches the last packet progress (avoid duplicate)
+        if training_data.last_packet_progress and 
+           training_data.last_packet_progress.current == tonumber(text_current) and
+           training_data.last_packet_progress.total == tonumber(text_total) then
+            -- Already processed via packet, skip text processing
+            training_data.last_defeated_enemy = nil;
+            return;
+        end
+        
+        if training_data.last_defeated_enemy then
+            local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
+            if enemy then
+                enemy.killed = tonumber(text_current);
+                save_training_data();
+            end
         end
     end
     training_data.last_defeated_enemy = nil;
@@ -277,15 +321,41 @@ local message_handlers = {
     },
     {
         pattern = MESSAGES.REGIME_RESET,
-        handler = handle_regime_reset,
+        handler = function() handle_regime_reset(false) end,
         check_active = true
     },
     {
         pattern = MESSAGES.PROGRESS_KEYWORD,
-        handler = handle_progress_update,
+        handler = function(msg) handle_progress_update(msg, false) end,
         check_active = true
     }
 };
+
+-- Initialize packet handler with callbacks (after all handler functions are defined)
+packet_handler.init({
+    on_defeat = function(target_name)
+        if is_training_valid() then
+            handle_enemy_defeat(nil, true, target_name);
+        end
+    end,
+    on_progress = function(current, total)
+        if is_training_valid() then
+            handle_progress_update(nil, true, current, total);
+        end
+    end,
+    on_regime_complete = function()
+        if is_training_valid() then
+            -- Regime completed, but we don't auto-clear anymore
+            -- Just log it for now
+            print(MESSAGES.ADDON_PREFIX .. ' Training regime completed!');
+        end
+    end,
+    on_regime_reset = function()
+        if is_training_valid() then
+            handle_regime_reset(true);
+        end
+    end,
+});
 
 -- Event: Incoming text (chat messages)
 ashita.events.register('text_in', 'text_in_cb', function (e)
@@ -324,10 +394,15 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
         return;
     end
     
-    -- Handle enemy defeat
-    if handle_enemy_defeat(msg) then
+    -- Handle enemy defeat (text-based fallback)
+    if handle_enemy_defeat(msg, false, nil) then
         return;
     end
+end);
+
+-- Event: Incoming packets
+ashita.events.register('packet_in', 'packet_in_cb', function (e)
+    packet_handler.handle_incoming_packet(e);
 end);
 
 -- Command handler
