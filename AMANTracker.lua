@@ -9,7 +9,7 @@ This addon is designed for Ashita v4.
 
 addon.name      = 'AMANTracker';
 addon.author    = 'Seekey';
-addon.version   = '1.0';
+addon.version   = '1.1';
 addon.desc      = 'GUI Tracker for Adventurers Mutual Aid Network Training Regimes';
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
