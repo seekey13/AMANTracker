@@ -10,7 +10,7 @@ local imgui = require('imgui');
 -- State
 -- ============================================================================
 
-local ui_visible = { true };
+local ui_visible = { false };  -- Start hidden, auto-show when data is available
 
 -- Training data reference (set via init)
 local training_data = nil;
