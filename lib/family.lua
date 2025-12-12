@@ -105,24 +105,31 @@ function family.is_family_member(enemy_name, family_type)
     
     local enemy_lower = enemy_name:lower();
     
-    -- Check exclusions first (exact match)
+    -- Check if enemy name contains any inclusion pattern (substring match)
+    local has_inclusion = false;
+    for _, include_pattern in ipairs(family_def.includes) do
+        local pattern_lower = include_pattern:lower();
+        local found = enemy_lower:find(pattern_lower, 1, true);
+        if found then
+            has_inclusion = true;
+            break;
+        end
+    end
+    
+    -- If no inclusion match, return false immediately
+    if not has_inclusion then
+        return false;
+    end
+    
+    -- Check exclusions (exact match)
     for _, exclude_pattern in ipairs(family_def.excludes) do
         if enemy_lower == exclude_pattern:lower() then
             return false;
         end
     end
     
-    -- Check if enemy name contains any inclusion pattern (substring match)
-    for _, include_pattern in ipairs(family_def.includes) do
-        local pattern_lower = include_pattern:lower();
-        local found = enemy_lower:find(pattern_lower, 1, true);
-        if found then
-            return true;
-        end
-    end
-    
-    -- No inclusion match found
-    return false;
+    -- Passed inclusion and exclusion checks
+    return true;
 end
 
 -- Extract family type from "Members of the [X] Family" pattern

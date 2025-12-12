@@ -133,13 +133,8 @@ local function handle_action_message(am)
             callbacks.on_regime_reset();
         end
     
-    -- Message 698: "Progress: ${number}/${number2}."
-    elseif am.message_id == MESSAGE_IDS.PROGRESS then
-        if callbacks.on_progress then
-            local current = am.param_1;
-            local total = am.param_2;
-            callbacks.on_progress(current, total);
-        end
+    -- NOTE: Message 698 ("Progress: X/Y") is NOT processed because it's used
+    -- by both AMAN and Records of Eminence. Message 558 is AMAN-specific.
     
     -- Message 646: "${actor} uses ${ability}.${lb}${target} falls to the ground."
     -- This is for defeats via abilities/weapon skills

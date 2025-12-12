@@ -44,7 +44,7 @@ local MESSAGES = {
     REGIME_RESET = "Your current training regime will begin anew!",
     DEFEAT_PATTERN_1 = "defeats the (.-)%.",
     DEFEAT_PATTERN_2 = "The (.-) falls to the ground%.",
-    PROGRESS_KEYWORD = "designated target",
+    PROGRESS_KEYWORD = "You have defeated a designated target.",
     PROGRESS_PATTERN = "Progress:%s*(%d+)/(%d+)",
     
     -- Addon messages
@@ -282,82 +282,37 @@ local function handle_regime_cancellation()
     clear_training_data();
 end
 
-local function handle_regime_reset(from_packet)
+local function handle_regime_reset()
     for i, enemy in ipairs(training_data.enemies) do
         enemy.killed = 0;
     end
     training_data.last_packet_progress = nil;
     save_training_data();
-    
-    if not from_packet then
-        -- Text-based detection (fallback)
-        return;
-    end
 end
 
-local function handle_enemy_defeat(msg, from_packet, target_name)
-    local defeated_enemy = target_name;
-    
-    -- If not from packet, parse from text message
-    if not from_packet then
-        defeated_enemy = string.match(msg, MESSAGES.DEFEAT_PATTERN_1);
-        if not defeated_enemy then
-            defeated_enemy = string.match(msg, MESSAGES.DEFEAT_PATTERN_2);
-        end
-    end
-    
-    if defeated_enemy then
-        printf('Enemy defeated: "%s" (from_packet=%s)', defeated_enemy, tostring(from_packet));
-        local enemy, index = find_enemy_by_name(defeated_enemy);
+local function handle_enemy_defeat(target_name)
+    if target_name then
+        printf('Enemy defeated: "%s"', target_name);
+        local enemy, index = find_enemy_by_name(target_name);
         if enemy then
             printf('Found matching tracked enemy: "%s"', enemy.name);
-            training_data.last_defeated_enemy = defeated_enemy;
+            training_data.last_defeated_enemy = target_name;
         else
-            printf('No matching tracked enemy found for "%s"', defeated_enemy);
+            printf('No matching tracked enemy found for "%s"', target_name);
         end
-        return true;
     end
-    return false;
 end
 
-local function handle_progress_update(msg, from_packet, current, total)
-    -- If from packet, use packet data directly
-    if from_packet then
-        printf('Progress update: %d/%d (last_defeated_enemy="%s")', current, total, training_data.last_defeated_enemy or 'nil');
-        -- Store packet progress to avoid duplicate processing from text
-        training_data.last_packet_progress = {current = current, total = total};
-        
-        -- Find enemy and update kill count
-        if training_data.last_defeated_enemy then
-            local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
-            if enemy then
-                printf('Updating kill count for "%s": %d -> %d', enemy.name, enemy.killed, current);
-                enemy.killed = current;
-                save_training_data();
-            end
-        end
-        training_data.last_defeated_enemy = nil;
-        return;
-    end
+local function handle_progress_update(current, total)
+    printf('Progress update: %d/%d (last_defeated_enemy="%s")', current, total, training_data.last_defeated_enemy or 'nil');
     
-    -- Text-based processing (fallback)
-    local text_current, text_total = string.match(msg, MESSAGES.PROGRESS_PATTERN);
-    if text_current and text_total then
-        -- Check if this matches the last packet progress (avoid duplicate)
-        if training_data.last_packet_progress and 
-           training_data.last_packet_progress.current == tonumber(text_current) and
-           training_data.last_packet_progress.total == tonumber(text_total) then
-            -- Already processed via packet, skip text processing
-            training_data.last_defeated_enemy = nil;
-            return;
-        end
-        
-        if training_data.last_defeated_enemy then
-            local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
-            if enemy then
-                enemy.killed = tonumber(text_current);
-                save_training_data();
-            end
+    -- Find enemy and update kill count
+    if training_data.last_defeated_enemy then
+        local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
+        if enemy then
+            printf('Updating kill count for "%s": %d -> %d', enemy.name, enemy.killed, current);
+            enemy.killed = current;
+            save_training_data();
         end
     end
     training_data.last_defeated_enemy = nil;
@@ -384,16 +339,6 @@ local message_handlers = {
         pattern = MESSAGES.REGIME_CANCELED,
         handler = handle_regime_cancellation,
         check_active = true
-    },
-    {
-        pattern = MESSAGES.REGIME_RESET,
-        handler = function() handle_regime_reset(false) end,
-        check_active = true
-    },
-    {
-        pattern = MESSAGES.PROGRESS_KEYWORD,
-        handler = function(msg) handle_progress_update(msg, false) end,
-        check_active = true
     }
 };
 
@@ -401,12 +346,12 @@ local message_handlers = {
 packet_handler.init({
     on_defeat = function(target_name)
         if is_training_valid() then
-            handle_enemy_defeat(nil, true, target_name);
+            handle_enemy_defeat(target_name);
         end
     end,
     on_progress = function(current, total)
         if is_training_valid() then
-            handle_progress_update(nil, true, current, total);
+            handle_progress_update(current, total);
         end
     end,
     on_regime_complete = function()
@@ -416,7 +361,7 @@ packet_handler.init({
     end,
     on_regime_reset = function()
         if is_training_valid() then
-            handle_regime_reset(true);
+            handle_regime_reset();
         end
     end,
 });
@@ -455,11 +400,6 @@ ashita.events.register('text_in', 'text_in_cb', function (e)
     
     -- Handle training area parsing
     if handle_training_area(msg) then
-        return;
-    end
-    
-    -- Handle enemy defeat (text-based fallback)
-    if handle_enemy_defeat(msg, false, nil) then
         return;
     end
 end);
