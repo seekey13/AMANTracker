@@ -63,21 +63,14 @@ end
 -- Returns:
 --   string - Entity name or nil
 local function get_entity_name(server_id)
-    -- Try using the GetEntityByServerId helper if available
-    local entity = GetEntity(server_id);
-    if entity then
-        return entity.Name;
-    end
-    
-    -- Fallback: search through all entities
     local entity_mgr = AshitaCore:GetMemoryManager():GetEntity();
     if not entity_mgr then
         return nil;
     end
     
-    -- Search through entities to find matching server ID
+    -- Search through all entities to find matching server ID
     for i = 0, 2303 do
-        entity = entity_mgr:GetRawEntity(i);
+        local entity = entity_mgr:GetRawEntity(i);
         if entity and entity.ServerId == server_id then
             return entity.Name;
         end
@@ -104,17 +97,26 @@ local function handle_action_message(am)
     local player_id = get_player_id();
     
     -- Message 6: "${actor} defeats ${target}."
+    -- Used to capture the enemy name when player defeats an enemy
     if am.message_id == MESSAGE_IDS.DEFEAT then
-        -- Only process if player is the actor
-        if am.actor_id == player_id and callbacks.on_defeat then
+        -- Process if player is the actor OR if we need to track all defeats for AMAN
+        -- (AMAN progress updates come even when trusts/party members get killing blow)
+        if callbacks.on_defeat then
             local target_name = get_entity_name(am.target_id);
+            print(string.format('[DEBUG] Message 6 - actor_id: %d, player_id: %d, target_id: %d, target_name: %s', 
+                am.actor_id, player_id, am.target_id, target_name or 'nil'));
             if target_name then
                 callbacks.on_defeat(target_name);
+            else
+                print('[DEBUG] Message 6 - Failed to get target name from entity manager');
             end
         end
     
     -- Message 558: "You defeated a designated target. (Progress: ${number}/${number2})"
+    -- This message only provides progress numbers, not enemy identity
     elseif am.message_id == MESSAGE_IDS.DESIGNATED_TARGET then
+        -- Message 558 doesn't contain enemy ID, only progress information
+        -- The enemy name comes from message 6 which fires first
         if callbacks.on_progress then
             local current = am.param_1;
             local total = am.param_2;
@@ -133,25 +135,24 @@ local function handle_action_message(am)
             callbacks.on_regime_reset();
         end
     
-    -- Message 698: "Progress: ${number}/${number2}."
-    elseif am.message_id == MESSAGE_IDS.PROGRESS then
-        if callbacks.on_progress then
-            local current = am.param_1;
-            local total = am.param_2;
-            callbacks.on_progress(current, total);
-        end
-    
     -- Message 646: "${actor} uses ${ability}.${lb}${target} falls to the ground."
-    -- This is for defeats via abilities/weapon skills
+    -- Alternative defeat message for abilities/weapon skills
     elseif am.message_id == MESSAGE_IDS.FALLS_TO_GROUND then
-        -- Only process if player is the actor
-        if am.actor_id == player_id and callbacks.on_defeat then
+        -- Process if player is the actor OR if we need to track all defeats for AMAN
+        if callbacks.on_defeat then
             local target_name = get_entity_name(am.target_id);
+            print(string.format('[DEBUG] Message 646 - actor_id: %d, player_id: %d, target_id: %d, target_name: %s', 
+                am.actor_id, player_id, am.target_id, target_name or 'nil'));
             if target_name then
                 callbacks.on_defeat(target_name);
+            else
+                print('[DEBUG] Message 646 - Failed to get target name from entity manager');
             end
         end
     end
+    
+    -- NOTE: Message 698 ("Progress: X/Y") is NOT processed because it's used
+    -- by both AMAN and Records of Eminence. Message 558 is AMAN-specific.
 end
 
 -- Handle incoming packet
