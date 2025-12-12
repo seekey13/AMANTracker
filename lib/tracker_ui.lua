@@ -61,6 +61,7 @@ local font_settings = T{
 
 local SPACING_VERTICAL = 5;  -- Vertical spacing between elements
 local SPACING_HORIZONTAL = 10;  -- Horizontal spacing for inline elements
+local SPACING_NAME_TO_PROGRESS = 2;  -- Space between enemy name and progress bar
 
 -- Window position settings (nil = user controlled, or set {x, y} for default position)
 local window_position = nil;  -- Example: { 100, 100 } to position at x=100, y=100
@@ -238,30 +239,32 @@ function tracker_ui.render()
                 
                 local name_w, name_h = entry.name_text:get_text_size();
                 max_width = math.max(max_width, name_w);
-                offsetY = offsetY + name_h + 2;
+                offsetY = offsetY + name_h + SPACING_NAME_TO_PROGRESS;
                 
-                -- Progress bar text (showing as text-based bar)
+                -- Move ImGui cursor to the correct position for progress bar
+                imgui.SetCursorScreenPos({ cursor_x, cursor_y + offsetY });
+                
+                -- Progress bar using ImGui
                 local killed_count = enemy.killed or 0;
                 local progress_fraction = killed_count / enemy.total;
                 local progress_text = string.format('%d/%d', killed_count, enemy.total);
                 
-                -- Create a visual text-based progress bar
-                local bar_width = 20;
-                local filled_chars = math.floor(progress_fraction * bar_width);
-                local empty_chars = bar_width - filled_chars;
-                local progress_bar = string.format('[%s%s] %s', 
-                    string.rep('=', filled_chars),
-                    string.rep('-', empty_chars),
-                    progress_text);
+                -- Style the progress bar
+                local bar_color = { 0.2, 0.8, 0.2, 1.0 };
+                imgui.PushStyleColor(ImGuiCol_PlotHistogram, bar_color);
+                imgui.PushItemWidth(250);  -- Set width for progress bar
+                imgui.ProgressBar(progress_fraction, { -1, 0 }, progress_text);
+                imgui.PopItemWidth();
+                imgui.PopStyleColor(1);
                 
-                entry.progress_text:set_text(progress_bar);
-                entry.progress_text:set_position_x(cursor_x);
-                entry.progress_text:set_position_y(cursor_y + offsetY);
-                entry.progress_text:set_visible(true);
+                local progress_bar_height = 24;  -- Fixed height for progress bar
+                max_width = math.max(max_width, 250);
+                offsetY = offsetY + progress_bar_height + SPACING_VERTICAL * 2;
                 
-                local progress_w, progress_h = entry.progress_text:get_text_size();
-                max_width = math.max(max_width, progress_w);
-                offsetY = offsetY + progress_h + SPACING_VERTICAL * 2;
+                -- Hide the progress text object since we're using ImGui progress bar
+                if entry.progress_text then
+                    entry.progress_text:set_visible(false);
+                end
             end
             
             -- Hide any extra enemy entries that aren't being used
