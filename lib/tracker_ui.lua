@@ -239,7 +239,8 @@ function tracker_ui.render()
                 
                 local name_w, name_h = entry.name_text:get_text_size();
                 max_width = math.max(max_width, name_w);
-                offsetY = offsetY + name_h + SPACING_NAME_TO_PROGRESS;
+                -- Use consistent font height instead of measured text height to avoid descender issues
+                offsetY = offsetY + font_settings.entry.font_height + SPACING_NAME_TO_PROGRESS;
                 
                 -- Move ImGui cursor to the correct position for progress bar
                 imgui.SetCursorScreenPos({ cursor_x, cursor_y + offsetY });
@@ -260,6 +261,9 @@ function tracker_ui.render()
                 local progress_bar_height = 24;  -- Fixed height for progress bar
                 max_width = math.max(max_width, 250);
                 offsetY = offsetY + progress_bar_height + SPACING_VERTICAL * 2;
+                
+                -- Reset cursor to ensure consistent positioning for next enemy
+                imgui.SetCursorScreenPos({ cursor_x, cursor_y + offsetY });
                 
                 -- Hide the progress text object since we're using ImGui progress bar
                 if entry.progress_text then
