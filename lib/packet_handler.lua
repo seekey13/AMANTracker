@@ -115,6 +115,15 @@ local function handle_action_message(am)
     
     -- Message 558: "You defeated a designated target. (Progress: ${number}/${number2})"
     elseif am.message_id == MESSAGE_IDS.DESIGNATED_TARGET then
+        -- This message includes both defeat and progress information
+        -- First, register the defeat (target_id contains the defeated enemy)
+        if callbacks.on_defeat then
+            local target_name = get_entity_name(am.target_id);
+            if target_name then
+                callbacks.on_defeat(target_name);
+            end
+        end
+        -- Then update progress
         if callbacks.on_progress then
             local current = am.param_1;
             local total = am.param_2;
