@@ -13,6 +13,7 @@ local ffi = require('ffi');
 -- ============================================================================
 
 local ui_visible = { false };  -- Start hidden, auto-show when data is available
+local ui_mode = 'gdifonts';  -- 'gdifonts' or 'imgui'
 
 -- Training data reference (set via init)
 local training_data = nil;
@@ -126,9 +127,44 @@ end
 -- Initialize the module with training data reference
 -- Args:
 --   data (table) - Reference to the training_data table
-function tracker_ui.init(data)
+--   mode (string, optional) - UI mode: 'gdifonts' or 'imgui'
+function tracker_ui.init(data, mode)
     training_data = data;
-    initialize_ui_objects();
+    ui_mode = mode or 'gdifonts';
+    if ui_mode == 'gdifonts' then
+        initialize_ui_objects();
+    end
+end
+
+-- Set UI mode
+-- Args:
+--   mode (string) - 'gdifonts' or 'imgui'
+function tracker_ui.set_ui_mode(mode)
+    ui_mode = mode;
+    if ui_mode == 'gdifonts' then
+        initialize_ui_objects();
+    else
+        -- Clean up GDI objects when switching to imgui
+        if ui_objects.training_area_text ~= nil then
+            gdi:destroy_object(ui_objects.training_area_text);
+            ui_objects.training_area_text = nil;
+        end
+        if ui_objects.level_range_text ~= nil then
+            gdi:destroy_object(ui_objects.level_range_text);
+            ui_objects.level_range_text = nil;
+        end
+        for i, entry in ipairs(ui_objects.enemy_entries) do
+            if entry ~= nil then
+                if entry.name_text ~= nil then
+                    gdi:destroy_object(entry.name_text);
+                end
+                if entry.progress_text ~= nil then
+                    gdi:destroy_object(entry.progress_text);
+                end
+            end
+        end
+        ui_objects.enemy_entries = {};
+    end
 end
 
 -- Check if the tracker window is visible
@@ -157,8 +193,85 @@ function tracker_ui.cleanup()
     gdi:destroy_interface();
 end
 
--- Render the tracker UI (call from d3d_present event)
-function tracker_ui.render()
+-- Render the old ImGui UI (solid window with decorations)
+local function render_imgui_mode()
+    if not training_data then
+        return;
+    end
+    
+    -- Determine if we have valid data to display
+    local has_data = training_data.is_active and 
+                     training_data.target_level_range and 
+                     training_data.training_area_zone and 
+                     training_data.enemies and 
+                     #training_data.enemies > 0;
+    
+    -- Auto-show when data becomes available
+    if has_data and not ui_visible[1] then
+        ui_visible[1] = true;
+    end
+    
+    -- Don't render if visibility is false
+    if not ui_visible[1] then
+        return;
+    end
+    
+    -- Calculate window height based on content
+    local line_height = imgui.GetTextLineHeightWithSpacing();
+    local separator_height = 8;
+    local padding = 20;
+    local progress_bar_height = 24;
+    
+    local num_enemies = has_data and #training_data.enemies or 1;
+    local calculated_height = padding + line_height + separator_height + 
+                              (num_enemies * (line_height + progress_bar_height)) + 
+                              separator_height + line_height + padding;
+    
+    local MIN_WINDOW_WIDTH = 300;
+    local MAX_WINDOW_WIDTH = 500;
+    imgui.SetNextWindowSizeConstraints({ MIN_WINDOW_WIDTH, calculated_height }, { MAX_WINDOW_WIDTH, calculated_height });
+    
+    if imgui.Begin('AMAN Tracker', ui_visible) then
+        -- Training Area
+        if training_data.training_area_zone then
+            imgui.Text(string.format('Training Area: %s', training_data.training_area_zone));
+        else
+            imgui.TextDisabled('Training Area: None');
+        end
+        
+        imgui.Separator();
+        
+        -- Display all enemies
+        if has_data and training_data.enemies and #training_data.enemies > 0 then
+            for i, enemy in ipairs(training_data.enemies) do
+                local killed_count = enemy.killed or 0;
+                local progress_fraction = killed_count / enemy.total;
+                
+                imgui.Text(enemy.name);
+                
+                local bar_color = { 0.2, 0.8, 0.2, 1.0 };
+                imgui.PushStyleColor(ImGuiCol_PlotHistogram, bar_color);
+                imgui.ProgressBar(progress_fraction, { -1, 0 }, string.format('%d/%d', killed_count, enemy.total));
+                imgui.PopStyleColor(1);
+            end
+        else
+            imgui.TextDisabled('Enemies: None');
+        end
+        
+        imgui.Separator();
+        
+        -- Level Range
+        if training_data.target_level_range then
+            imgui.Text(string.format('Level Range: %s', training_data.target_level_range));
+        else
+            imgui.TextDisabled('Level Range: None');
+        end
+    end
+    imgui.End();
+end
+
+-- Render the GDI Fonts hybrid UI (transparent with outlined text)
+local function render_gdifonts_mode()
     if not training_data then
         set_text_visible(false);
         return;
@@ -309,6 +422,15 @@ function tracker_ui.render()
         set_text_visible(false);
     end
     imgui.End();
+end
+
+-- Main render function (call from d3d_present event)
+function tracker_ui.render()
+    if ui_mode == 'imgui' then
+        render_imgui_mode();
+    else
+        render_gdifonts_mode();
+    end
 end
 
 return tracker_ui;

@@ -9,7 +9,7 @@ This addon is designed for Ashita v4.
 
 addon.name      = 'AMANTracker';
 addon.author    = 'Seekey';
-addon.version   = '2.1';
+addon.version   = '2.2';
 addon.desc      = 'GUI Tracker for Adventurers Mutual Aid Network Training Regimes';
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
@@ -61,6 +61,7 @@ local PERSISTENT_FIELDS = {
     'enemies',
     'target_level_range',
     'training_area_zone',
+    'ui_mode',
 };
 
 -- Default settings (structure for persistent data)
@@ -69,6 +70,7 @@ local default_settings = T{
     enemies = {},  -- Array of {total, killed, name, match_type} tables
     target_level_range = nil,
     training_area_zone = nil,
+    ui_mode = 'gdifonts',  -- 'gdifonts' or 'imgui'
 };
 
 -- Training data storage (includes both persistent and transient data)
@@ -104,7 +106,7 @@ if saved_data.is_active then
 end
 
 -- Initialize the UI with training data reference
-tracker_ui.init(training_data);
+tracker_ui.init(training_data, saved_data.ui_mode or 'gdifonts');
 
 -- Helper function to save current hunt data
 local function save_training_data()
@@ -424,10 +426,33 @@ ashita.events.register('command', 'command_cb', function (e)
     e.blocked = true;
     
     -- Handle subcommands
-    if #args == 1 or args[2] == 'ui' then
-        tracker_ui.toggle();
-        local status = tracker_ui.is_visible() and "opened" or "closed";
-        printf('UI %s', status);
+    if #args == 1 then
+        -- /at - show help
+        printf('AMANTracker Commands:');
+        printf('  /at             - Show this help');
+        printf('  /at ui          - Toggle UI visibility');
+        printf('  /at ui gdifonts - Switch to transparent floating text (default)');
+        printf('  /at ui imgui    - Switch to classic solid window');
+        printf('  /at clear       - Clear current training data');
+        printf('  /at test <name> - Test enemy name matching (debug)');
+    elseif args[2] == 'ui' then
+        if #args >= 3 then
+            -- /at ui <mode>
+            local mode = args[3]:lower();
+            if mode == 'gdifonts' or mode == 'imgui' then
+                saved_data.ui_mode = mode;
+                settings.save();
+                tracker_ui.set_ui_mode(mode);
+                printf('UI mode set to: %s', mode);
+            else
+                errorf('Invalid UI mode. Use "gdifonts" or "imgui"');
+            end
+        else
+            -- /at ui - toggle visibility
+            tracker_ui.toggle();
+            local status = tracker_ui.is_visible() and "opened" or "closed";
+            printf('UI %s', status);
+        end
     elseif args[2] == 'clear' then
         clear_training_data();
         printf(MESSAGES.DATA_CLEARED);
