@@ -82,21 +82,24 @@ end
 
 -- Render the tracker UI (call from d3d_present event)
 function tracker_ui.render()
-    if not ui_visible[1] then
-        return;
-    end
-    
     if not training_data then
         return;
     end
     
-    -- Only show UI when training is active
-    if not training_data.is_active then
-        return;
+    -- Determine if we have valid data to display
+    local has_data = training_data.is_active and 
+                     training_data.target_level_range and 
+                     training_data.training_area_zone and 
+                     training_data.enemies and 
+                     #training_data.enemies > 0;
+    
+    -- Auto-show when data becomes available
+    if has_data and not ui_visible[1] then
+        ui_visible[1] = true;
     end
     
-    -- Only show UI when we have parsed data (not all nil)
-    if not training_data.target_level_range or not training_data.training_area_zone or not training_data.enemies or #training_data.enemies == 0 then
+    -- Don't render if visibility is false
+    if not ui_visible[1] then
         return;
     end
     
@@ -107,7 +110,7 @@ function tracker_ui.render()
     local progress_bar_height = 24; -- Height of progress bar
     
     -- Content: Training Area (1 line) + Separator + Enemies (name + progress bar per enemy) + Separator + Level Range (1 line)
-    local num_enemies = #training_data.enemies;
+    local num_enemies = has_data and #training_data.enemies or 1;  -- Minimum 1 line for "Enemies: None"
     local calculated_height = padding + line_height + separator_height + 
                               (num_enemies * (line_height + progress_bar_height)) + 
                               separator_height + line_height + padding;
@@ -122,7 +125,7 @@ function tracker_ui.render()
         imgui.Separator();
         
         -- Display all enemies
-        if training_data.enemies and #training_data.enemies > 0 then
+        if has_data and training_data.enemies and #training_data.enemies > 0 then
             for i, enemy in ipairs(training_data.enemies) do
                 local killed_count = enemy.killed or 0;
                 local progress_fraction = killed_count / enemy.total;
