@@ -313,7 +313,11 @@ local function handle_progress_update(current, total)
             printf('Updating kill count for "%s": %d -> %d', enemy.name, enemy.killed, current);
             enemy.killed = current;
             save_training_data();
+        else
+            printf('Warning: Could not find tracked enemy for "%s"', training_data.last_defeated_enemy);
         end
+    else
+        printf('Warning: No last_defeated_enemy set for progress update');
     end
     training_data.last_defeated_enemy = nil;
 end

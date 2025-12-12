@@ -63,21 +63,14 @@ end
 -- Returns:
 --   string - Entity name or nil
 local function get_entity_name(server_id)
-    -- Try using the GetEntityByServerId helper if available
-    local entity = GetEntity(server_id);
-    if entity then
-        return entity.Name;
-    end
-    
-    -- Fallback: search through all entities
     local entity_mgr = AshitaCore:GetMemoryManager():GetEntity();
     if not entity_mgr then
         return nil;
     end
     
-    -- Search through entities to find matching server ID
+    -- Search through all entities to find matching server ID
     for i = 0, 2303 do
-        entity = entity_mgr:GetRawEntity(i);
+        local entity = entity_mgr:GetRawEntity(i);
         if entity and entity.ServerId == server_id then
             return entity.Name;
         end
@@ -104,6 +97,7 @@ local function handle_action_message(am)
     local player_id = get_player_id();
     
     -- Message 6: "${actor} defeats ${target}."
+    -- Used to capture the enemy name when player defeats an enemy
     if am.message_id == MESSAGE_IDS.DEFEAT then
         -- Only process if player is the actor
         if am.actor_id == player_id and callbacks.on_defeat then
@@ -114,16 +108,10 @@ local function handle_action_message(am)
         end
     
     -- Message 558: "You defeated a designated target. (Progress: ${number}/${number2})"
+    -- This message only provides progress numbers, not enemy identity
     elseif am.message_id == MESSAGE_IDS.DESIGNATED_TARGET then
-        -- This message includes both defeat and progress information
-        -- First, register the defeat (target_id contains the defeated enemy)
-        if callbacks.on_defeat then
-            local target_name = get_entity_name(am.target_id);
-            if target_name then
-                callbacks.on_defeat(target_name);
-            end
-        end
-        -- Then update progress
+        -- Message 558 doesn't contain enemy ID, only progress information
+        -- The enemy name comes from message 6 which fires first
         if callbacks.on_progress then
             local current = am.param_1;
             local total = am.param_2;
@@ -142,11 +130,8 @@ local function handle_action_message(am)
             callbacks.on_regime_reset();
         end
     
-    -- NOTE: Message 698 ("Progress: X/Y") is NOT processed because it's used
-    -- by both AMAN and Records of Eminence. Message 558 is AMAN-specific.
-    
     -- Message 646: "${actor} uses ${ability}.${lb}${target} falls to the ground."
-    -- This is for defeats via abilities/weapon skills
+    -- Alternative defeat message for abilities/weapon skills
     elseif am.message_id == MESSAGE_IDS.FALLS_TO_GROUND then
         -- Only process if player is the actor
         if am.actor_id == player_id and callbacks.on_defeat then
@@ -156,6 +141,9 @@ local function handle_action_message(am)
             end
         end
     end
+    
+    -- NOTE: Message 698 ("Progress: X/Y") is NOT processed because it's used
+    -- by both AMAN and Records of Eminence. Message 558 is AMAN-specific.
 end
 
 -- Handle incoming packet
