@@ -206,11 +206,6 @@ local function render_imgui_mode()
                      training_data.enemies and 
                      #training_data.enemies > 0;
     
-    -- Auto-show when data becomes available
-    if has_data and not ui_visible[1] then
-        ui_visible[1] = true;
-    end
-    
     -- Don't render if visibility is false
     if not ui_visible[1] then
         return;
@@ -283,11 +278,6 @@ local function render_gdifonts_mode()
                      training_data.training_area_zone and 
                      training_data.enemies and 
                      #training_data.enemies > 0;
-    
-    -- Auto-show when data becomes available
-    if has_data and not ui_visible[1] then
-        ui_visible[1] = true;
-    end
     
     -- Don't render if visibility is false
     if not ui_visible[1] then

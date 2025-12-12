@@ -278,6 +278,9 @@ local function handle_regime_confirmation()
         training_data.training_area_zone or "Unknown",
         training_data.target_level_range or "Unknown");
     save_training_data();
+    
+    -- Auto-open UI when a new training regime is confirmed
+    tracker_ui.open();
 end
 
 local function handle_regime_cancellation()
@@ -436,7 +439,7 @@ ashita.events.register('command', 'command_cb', function (e)
         printf('  /at clear       - Clear current training data');
         printf('  /at test <name> - Test enemy name matching (debug)');
     elseif args[2] == 'ui' then
-        if #args >= 3 then
+        if args[3] ~= nil and args[3] ~= '' then
             -- /at ui <mode>
             local mode = args[3]:lower();
             if mode == 'gdifonts' or mode == 'imgui' then
