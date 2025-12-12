@@ -127,15 +127,17 @@ Open an issue or pull request on the [GitHub repository](https://github.com/seek
 
 ## Special Thanks
 
-[Commandobill](https://github.com/commandobill), [atom0s](https://github.com/atom0s), and [Carver](https://github.com/CatsEyeXI)
+[Commandobill](https://github.com/commandobill), [atom0s](https://github.com/atom0s), [Carver](https://github.com/CatsEyeXI), and [Thorny](https://github.com/ThornyFFXI)
 
 Completely unnecessary AI generated image  
 <img width="400" alt="image" src="https://github.com/user-attachments/assets/46efa67b-61c2-4e39-a994-b4d6980d44a3" />
 
 
 ## Changelog
+### Version 2.2
+- New UI using GDI fonts from Thorny.
 
-### Version 2.1 (Current)
+### Version 2.1
 - **Major Feature: Family-Based Mob Tracking**
 - Added support for "Members of the X Family" training regimes
 - New family module with 16 pre-configured mob families

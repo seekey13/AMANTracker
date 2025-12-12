@@ -504,4 +504,5 @@ end);
 -- Event: Addon unload - save data
 ashita.events.register('unload', 'unload_cb', function()
     save_training_data();
+    tracker_ui.cleanup();
 end);
