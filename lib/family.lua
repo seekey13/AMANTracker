@@ -121,9 +121,11 @@ function family.is_family_member(enemy_name, family_type)
         return false;
     end
     
-    -- Check exclusions (exact match)
+    -- Check exclusions (substring match)
     for _, exclude_pattern in ipairs(family_def.excludes) do
-        if enemy_lower == exclude_pattern:lower() then
+        local pattern_lower = exclude_pattern:lower();
+        local found = enemy_lower:find(pattern_lower, 1, true);
+        if found then
             return false;
         end
     end
