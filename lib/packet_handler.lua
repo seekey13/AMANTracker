@@ -99,11 +99,16 @@ local function handle_action_message(am)
     -- Message 6: "${actor} defeats ${target}."
     -- Used to capture the enemy name when player defeats an enemy
     if am.message_id == MESSAGE_IDS.DEFEAT then
-        -- Only process if player is the actor
-        if am.actor_id == player_id and callbacks.on_defeat then
+        -- Process if player is the actor OR if we need to track all defeats for AMAN
+        -- (AMAN progress updates come even when trusts/party members get killing blow)
+        if callbacks.on_defeat then
             local target_name = get_entity_name(am.target_id);
+            print(string.format('[DEBUG] Message 6 - actor_id: %d, player_id: %d, target_id: %d, target_name: %s', 
+                am.actor_id, player_id, am.target_id, target_name or 'nil'));
             if target_name then
                 callbacks.on_defeat(target_name);
+            else
+                print('[DEBUG] Message 6 - Failed to get target name from entity manager');
             end
         end
     
@@ -133,11 +138,15 @@ local function handle_action_message(am)
     -- Message 646: "${actor} uses ${ability}.${lb}${target} falls to the ground."
     -- Alternative defeat message for abilities/weapon skills
     elseif am.message_id == MESSAGE_IDS.FALLS_TO_GROUND then
-        -- Only process if player is the actor
-        if am.actor_id == player_id and callbacks.on_defeat then
+        -- Process if player is the actor OR if we need to track all defeats for AMAN
+        if callbacks.on_defeat then
             local target_name = get_entity_name(am.target_id);
+            print(string.format('[DEBUG] Message 646 - actor_id: %d, player_id: %d, target_id: %d, target_name: %s', 
+                am.actor_id, player_id, am.target_id, target_name or 'nil'));
             if target_name then
                 callbacks.on_defeat(target_name);
+            else
+                print('[DEBUG] Message 646 - Failed to get target name from entity manager');
             end
         end
     end

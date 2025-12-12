@@ -11,13 +11,16 @@ AMANTracker is an Ashita v4 addon for Final Fantasy XI that provides a GUI track
 
 ## Features
 
+- **Family-based mob tracking** - Supports "Members of the X Family" training regimes
+- **16 mob families** - Pre-configured family definitions (Bat, Gigas, Goblin, Skeleton, etc.)
+- **Smart pattern matching** - Automatically detects family patterns vs exact mob names
 - **Hybrid packet/text detection** - Uses packets for reliable tracking with text fallback
 - **Automatic training regime detection** - Detects regime start, confirmation, and cancellation
 - **Real-time progress tracking** - Updates kill counts via packet events
 - **Persistent storage** - Saves progress across reloads and logins
 - **Automatic regime resets** - Detects when training restarts
 - **Clean, resizable UI** - Auto-sizing window with progress bars
-- **Toggle UI command** - `/at` or `/at ui` to show/hide the tracker
+- **Toggle UI command** - `/at ui` to show/hide the tracker
 - **Fully automatic** - No setup required, just start training
 
 
@@ -39,7 +42,9 @@ AMANTracker is an Ashita v4 addon for Final Fantasy XI that provides a GUI track
 
 ## Commands
 
-- `/at` or `/at ui` - Toggle the UI window visibility
+- `/at` - Show help
+- `/at ui` - Toggle the UI window visibility
+- `/at clear` - Clear current training data and reset tracker
 
 
 ## How It Works
@@ -130,15 +135,32 @@ Completely unnecessary AI generated image
 
 ## Changelog
 
-### Version 2.0 (Current)
+### Version 2.1 (Current)
+- **Major Feature: Family-Based Mob Tracking**
+- Added support for "Members of the X Family" training regimes
+- New family module with 16 pre-configured mob families
+- Smart pattern matching: automatic detection of family vs exact name patterns
+- Case-insensitive family lookup with inclusion/exclusion rules
+- Substring matching for inclusions, substring exclusion support
+- Match type optimization ('exact' vs 'family') for performance
+- Added `/at test <enemy_name>` command for debugging family matches
+- Fixed Records of Eminence interference (removed message ID 698 processing)
+- Improved packet handling to prevent duplicate defeat detection
+- Custom print functions for categorized output (printf, warnf, errorf)
+- Enhanced debug output for troubleshooting (can be removed for production)
+
+**Supported Families:**
+- Bat/Bats, Gigas, Goblin, Pugil, Evil Weapon, Yagudo, Doll, Skeleton
+- Shadow, Elemental, Golem, Sahagin, Antica, Worm, Sabotender, Tonberry
+
+### Version 2.0
 - **Major Update: Hybrid Packet/Text Detection System**
 - Added packet handler module for reliable event detection
 - Intercepts action message packets (0x29) for enemy defeats and progress
 - Packet-based tracking for defeats (message IDs 6, 646)
-- Packet-based progress updates (message IDs 558, 698)
+- Packet-based progress updates (message ID 558 for AMAN-specific tracking)
 - Packet-based regime reset detection (message ID 643)
 - Packet-based regime completion detection (message ID 559)
-- Duplicate prevention system (packets take priority over text)
 - Text-based fallback for tome interaction, regime start, confirmation, and cancellation
 - Entity name extraction directly from game memory
 - Improved accuracy and reliability for kill counting
