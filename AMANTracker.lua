@@ -148,75 +148,57 @@ end
 -- Helper function to find enemy in tracking list by name
 -- Handles both singular and plural forms, as well as family matching
 local function find_enemy_by_name(enemy_name)
-    printf('=== Searching for "%s" in %d tracked enemies ===', enemy_name, #training_data.enemies);
-    
     for i, enemy in ipairs(training_data.enemies) do
-        printf('  [%d] Checking against: "%s" (match_type: %s)', i, enemy.name, enemy.match_type or 'unknown');
-        
         -- Use match_type to optimize matching
         if enemy.match_type == 'family' then
             -- Family matching
             local family_type = family.extract_family_type(enemy.name);
             if family_type then
-                printf('  -> Checking family membership for "%s" family', family_type);
                 if family.is_family_member(enemy_name, family_type) then
-                    printf('  -> Match! "%s" is a member of "%s" family', enemy_name, family_type);
                     return enemy, i;
-                else
-                    printf('  -> Not a member of "%s" family', family_type);
                 end
             end
         elseif enemy.match_type == 'exact' then
             -- Exact match
             if enemy.name == enemy_name then
-                printf('  -> Exact match found!');
                 return enemy, i;
             end
             
             -- Try singular to plural match (defeat message is singular, list might be plural)
             if enemy.name == enemy_name .. "s" then
-                printf('  -> Plural match found!');
                 return enemy, i;
             end
             
             -- Try plural to singular match (list is plural, message might be singular)
             if enemy.name:sub(-1) == "s" and enemy.name:sub(1, -2) == enemy_name then
-                printf('  -> Singular match found!');
                 return enemy, i;
             end
         else
             -- Legacy support: no match_type specified, try all methods
-            printf('  -> Legacy mode: trying all match methods');
             
             -- Exact match
             if enemy.name == enemy_name then
-                printf('  -> Exact match found!');
                 return enemy, i;
             end
             
             -- Check if enemy.name is a family pattern
             local family_type = family.extract_family_type(enemy.name);
             if family_type then
-                printf('  -> Family pattern detected: "%s"', family_type);
                 if family.is_family_member(enemy_name, family_type) then
-                    printf('  -> Match! "%s" is a member of "%s" family', enemy_name, family_type);
                     return enemy, i;
                 end
             end
             
             -- Try singular/plural variations
             if enemy.name == enemy_name .. "s" then
-                printf('  -> Plural match found!');
                 return enemy, i;
             end
             if enemy.name:sub(-1) == "s" and enemy.name:sub(1, -2) == enemy_name then
-                printf('  -> Singular match found!');
                 return enemy, i;
             end
         end
     end
     
-    printf('=== No match found for "%s" ===', enemy_name);
     return nil, nil;
 end
 
@@ -302,32 +284,21 @@ end
 
 local function handle_enemy_defeat(target_name)
     if target_name then
-        printf('Enemy defeated: "%s"', target_name);
         local enemy, index = find_enemy_by_name(target_name);
         if enemy then
-            printf('Found matching tracked enemy: "%s"', enemy.name);
             training_data.last_defeated_enemy = target_name;
-        else
-            printf('No matching tracked enemy found for "%s"', target_name);
         end
     end
 end
 
 local function handle_progress_update(current, total)
-    printf('Progress update: %d/%d (last_defeated_enemy="%s")', current, total, training_data.last_defeated_enemy or 'nil');
-    
     -- Find enemy and update kill count
     if training_data.last_defeated_enemy then
         local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
         if enemy then
-            printf('Updating kill count for "%s": %d -> %d', enemy.name, enemy.killed, current);
             enemy.killed = current;
             save_training_data();
-        else
-            printf('Warning: Could not find tracked enemy for "%s"', training_data.last_defeated_enemy);
         end
-    else
-        printf('Warning: No last_defeated_enemy set for progress update');
     end
     training_data.last_defeated_enemy = nil;
 end
