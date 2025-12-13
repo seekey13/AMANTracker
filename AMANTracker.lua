@@ -108,6 +108,11 @@ end
 -- Initialize the UI with training data reference
 tracker_ui.init(training_data, saved_data.ui_mode or 'gdifonts');
 
+-- Auto-open UI if there's active training data
+if saved_data.is_active and training_data.enemies and #training_data.enemies > 0 then
+    tracker_ui.open();
+end
+
 -- Helper function to save current hunt data
 local function save_training_data()
     sync_persistent_data(training_data, saved_data);
