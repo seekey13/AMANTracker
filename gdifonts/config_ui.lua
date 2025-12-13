@@ -15,6 +15,9 @@ local ui_visible = { false };
 -- ============================================================================
 -- UI Constants from tracker_ui.lua
 -- ============================================================================
+-- Note: These values are duplicated here for display purposes only.
+-- They reflect the actual values used in lib/tracker_ui.lua
+-- If the values in tracker_ui.lua change, update these accordingly.
 
 -- Spacing values
 local SPACING_VERTICAL = 5;  -- Vertical spacing between elements
