@@ -79,6 +79,10 @@ local families = {
     ["Tonberry"] = {
         includes = { "Tonberry" },
         excludes = { "Tonberry's" }
+    },
+    ["Bee"] = {
+        includes = { "Bee", "Hornet", "Wasp", "Jacket", "Pephredo", "Vespo", "Soul Stinger" },
+        excludes = { "Goblin's" }
     }
 };
 
