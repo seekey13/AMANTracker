@@ -68,6 +68,24 @@ local SPACING_NAME_TO_PROGRESS = 2;  -- Space between enemy name and progress ba
 local window_position = nil;  -- Example: { 100, 100 } to position at x=100, y=100
 
 -- ============================================================================
+-- Helper Functions
+-- ============================================================================
+
+-- Format enemy names for display with proper capitalization
+local function format_enemy_name_for_display(enemy_name)
+    -- Check if this is a family pattern (e.g., "members of the bee family")
+    local family_type = enemy_name:match("^[Mm]embers of the (.+) [Ff]amily$");
+    if family_type then
+        -- Capitalize "Members" and the first letter of family name
+        local capitalized_family = family_type:sub(1,1):upper() .. family_type:sub(2):lower();
+        return string.format("Members of the %s Family", capitalized_family);
+    end
+    
+    -- For non-family enemies, return as-is
+    return enemy_name;
+end
+
+-- ============================================================================
 -- Module Functions
 -- ============================================================================
 
@@ -242,7 +260,7 @@ local function render_imgui_mode()
                 local killed_count = enemy.killed or 0;
                 local progress_fraction = killed_count / enemy.total;
                 
-                imgui.Text(enemy.name);
+                imgui.Text(format_enemy_name_for_display(enemy.name));
                 
                 local bar_color = { 0.2, 0.8, 0.2, 1.0 };
                 imgui.PushStyleColor(ImGuiCol_PlotHistogram, bar_color);
@@ -335,7 +353,7 @@ local function render_gdifonts_mode()
                 end
                 
                 -- Enemy name
-                entry.name_text:set_text(enemy.name);
+                entry.name_text:set_text(format_enemy_name_for_display(enemy.name));
                 entry.name_text:set_position_x(cursor_x);
                 entry.name_text:set_position_y(cursor_y + offsetY);
                 entry.name_text:set_visible(true);
