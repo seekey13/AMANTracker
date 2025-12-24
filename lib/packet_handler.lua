@@ -111,17 +111,8 @@ local function is_in_party(actor_id)
         end
     end
     
-    -- Check if the actor is the local player's pet
-    local player = entity_mgr:GetRawEntity(0);
-    if player and player.PetTargetIndex > 0 then
-        local pet = entity_mgr:GetRawEntity(player.PetTargetIndex);
-        if pet and pet.ServerId == actor_id then
-            return true;
-        end
-    end
-    
-    -- Check if the actor is a pet of any party member (indices 1-5)
-    for i = 1, 5 do
+    -- Check if the actor is a pet of any party member (including local player)
+    for i = 0, 5 do
         local member_id = party:GetMemberServerId(i);
         if member_id ~= 0 then
             -- Find the party member's entity
