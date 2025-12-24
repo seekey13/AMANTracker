@@ -1,6 +1,7 @@
 --[[
 AMANTracker - Packet Handler Module
 Handles incoming packets for reliable event detection
+Supports kill tracking from players, pets (BST pets, SMN avatars, etc.), and trusts
 ]]
 
 local packet_handler = {};
@@ -90,14 +91,15 @@ local function get_player_id()
     return 0;
 end
 
--- Check if an actor is in the player's party or is a trust belonging to a party member
+-- Check if an actor is in the player's party or is a pet/trust belonging to a party member
 -- Args:
 --   actor_id (number) - Actor's server ID
 -- Returns:
---   boolean - True if actor is in party or is a party member's trust, false otherwise
+--   boolean - True if actor is in party or is a party member's pet/trust, false otherwise
 local function is_in_party(actor_id)
     local party = AshitaCore:GetMemoryManager():GetParty();
-    if not party then
+    local entity_mgr = AshitaCore:GetMemoryManager():GetEntity();
+    if not party or not entity_mgr then
         return false;
     end
     
@@ -109,32 +111,54 @@ local function is_in_party(actor_id)
         end
     end
     
+    -- Check if the actor is the local player's pet
+    local player = entity_mgr:GetRawEntity(0);
+    if player and player.PetTargetIndex > 0 then
+        local pet = entity_mgr:GetRawEntity(player.PetTargetIndex);
+        if pet and pet.ServerId == actor_id then
+            return true;
+        end
+    end
+    
+    -- Check if the actor is a pet of any party member (indices 1-5)
+    for i = 1, 5 do
+        local member_id = party:GetMemberServerId(i);
+        if member_id ~= 0 then
+            -- Find the party member's entity
+            for j = 1, 2303 do
+                local entity = entity_mgr:GetRawEntity(j);
+                if entity and entity.ServerId == member_id then
+                    -- Check if this party member has a pet
+                    if entity.PetTargetIndex > 0 then
+                        local pet = entity_mgr:GetRawEntity(entity.PetTargetIndex);
+                        if pet and pet.ServerId == actor_id then
+                            return true;
+                        end
+                    end
+                    break; -- Found the party member, no need to continue inner loop
+                end
+            end
+        end
+    end
+    
     -- Check if the actor is a trust belonging to any party member
-    local entity_mgr = AshitaCore:GetMemoryManager():GetEntity();
-    if entity_mgr then
-        for i = 0, 2303 do
-            local entity = entity_mgr:GetRawEntity(i);
-            if entity and entity.ServerId == actor_id then
-                -- Check if this is a trust (SpawnFlags bit 0x0010)
-                if bit.band(entity.SpawnFlags, 0x0010) ~= 0 then
-                    -- Check if the trust's owner (PetTargetIndex) is a party member
-                    local owner_index = entity.PetTargetIndex;
-                    if owner_index and owner_index > 0 then
-                        local owner_entity = entity_mgr:GetRawEntity(owner_index);
-                        if owner_entity then
-                            local owner_id = owner_entity.ServerId;
-                            -- Check if owner is in party
-                            for j = 0, 5 do
-                                local member_id = party:GetMemberServerId(j);
-                                if member_id ~= 0 and member_id == owner_id then
-                                    return true;
-                                end
-                            end
+    for i = 0, 2303 do
+        local entity = entity_mgr:GetRawEntity(i);
+        if entity and entity.ServerId == actor_id then
+            -- Check if this entity is a trust with an owner
+            if entity.TrustOwnerTargetIndex and entity.TrustOwnerTargetIndex > 0 then
+                local owner_entity = entity_mgr:GetRawEntity(entity.TrustOwnerTargetIndex);
+                if owner_entity then
+                    -- Check if trust owner is in party
+                    for j = 0, 5 do
+                        local member_id = party:GetMemberServerId(j);
+                        if member_id ~= 0 and member_id == owner_entity.ServerId then
+                            return true;
                         end
                     end
                 end
-                break;
             end
+            break; -- Found the entity, no need to continue
         end
     end
     
