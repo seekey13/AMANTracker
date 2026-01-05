@@ -173,6 +173,16 @@ local function find_enemy_by_name(enemy_name)
             if enemy.name:sub(-1) == "s" and enemy.name:sub(1, -2) == enemy_name then
                 return enemy, i;
             end
+            
+            -- Try y -> ies transformation (e.g., Damselfly -> Damselflies)
+            if enemy.name:sub(-3) == "ies" and enemy.name:sub(1, -4) .. "y" == enemy_name then
+                return enemy, i;
+            end
+            
+            -- Try ies -> y transformation (e.g., defeated "Damselfly", list has "Damselflies")
+            if enemy_name:sub(-1) == "y" and enemy.name == enemy_name:sub(1, -2) .. "ies" then
+                return enemy, i;
+            end
         else
             -- Legacy support: no match_type specified, try all methods
             
@@ -194,6 +204,14 @@ local function find_enemy_by_name(enemy_name)
                 return enemy, i;
             end
             if enemy.name:sub(-1) == "s" and enemy.name:sub(1, -2) == enemy_name then
+                return enemy, i;
+            end
+            
+            -- Try y -> ies transformation
+            if enemy.name:sub(-3) == "ies" and enemy.name:sub(1, -4) .. "y" == enemy_name then
+                return enemy, i;
+            end
+            if enemy_name:sub(-1) == "y" and enemy.name == enemy_name:sub(1, -2) .. "ies" then
                 return enemy, i;
             end
         end
