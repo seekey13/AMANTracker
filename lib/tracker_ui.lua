@@ -74,7 +74,7 @@ local window_position = nil;  -- Example: { 100, 100 } to position at x=100, y=1
 -- Format enemy names for display with proper capitalization
 local function format_enemy_name_for_display(enemy_name)
     -- Check if this is a family pattern (e.g., "members of the bee family")
-    local family_type = enemy_name:match("^[Mm]embers of the (.+) [Ff]amily$");
+    local family_type = enemy_name:match("^[Mm]ember[s]? of (?:the )?(.+) [Ff]amily$");
     if family_type then
         -- Capitalize "Members" and the first letter of family name
         local capitalized_family = family_type:sub(1,1):upper() .. family_type:sub(2):lower();
