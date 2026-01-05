@@ -146,8 +146,13 @@ end
 -- @param enemy_name: The full enemy name string
 -- @return: family type string if pattern matches, nil otherwise
 function family.extract_family_type(enemy_name)
-    -- Try case-insensitive matching
-    local family_type = enemy_name:match("^[Mm]embers of the (.+) [Ff]amily$");
+    -- Try case-insensitive matching, allowing optional "the " and singular/plural "member"
+    local family_type = enemy_name:match("^[Mm]embers? of the (.+) [Ff]amily$");
+    if family_type then
+        return family_type;
+    end
+    -- Try without "the"
+    family_type = enemy_name:match("^[Mm]embers? of (.+) [Ff]amily$");
     return family_type;
 end
 
