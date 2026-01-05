@@ -156,7 +156,13 @@ Completely unnecessary AI generated image
 
 
 ## Changelog
-### Version 2.2 (Current)
+### Version 2.3 (Current)
+- **Enhanced Plural Detection**: Added support for words ending in "y" that become "ies" in plural form (e.g., Damselfly → Damselflies)
+- **New Mob Family**: Added Crab family with support for Crab, Snipper, Cutter, Ironshell, and Claw variants
+- Updated family list documentation
+- Special thanks to **delukard** who reported the bug.
+
+### Version 2.2
 - **Major Feature: Dual UI Mode System**
 - Added GDI Fonts mode with transparent floating text (default)
 - Added ImGui mode to preserve classic solid window experience
@@ -194,7 +200,7 @@ Completely unnecessary AI generated image
 
 **Supported Families:**
 - Bat/Bats, Gigas, Goblin, Pugil, Evil Weapon, Yagudo, Doll, Skeleton
-- Shadow, Elemental, Golem, Sahagin, Antica, Worm, Sabotender, Tonberry
+- Shadow, Elemental, Golem, Sahagin, Antica, Worm, Sabotender, Tonberry, Bee, Crab
 
 ### Version 2.0
 - **Major Update: Hybrid Packet/Text Detection System**
