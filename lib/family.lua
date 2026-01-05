@@ -84,6 +84,10 @@ local families = {
         includes = { "Bee", "Hornet", "Wasp", "Jacket", "Pephredo", "Vespo", "Soul Stinger" },
         excludes = { "Goblin's" }
     }
+    ["Crab"] = {
+        includes = { "Crab", "Snipper", "Cutter", "Ironshell", "Claw" },
+        excludes = {}
+    } 
 };
 
 -- Check if an enemy name belongs to a specific family
