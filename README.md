@@ -156,7 +156,10 @@ Completely unnecessary AI generated image
 
 
 ## Changelog
-### Version 2.3 (Current)
+### Version 2.4 (Current)
+- **New Mob Family**: Added Mandragora family with support for Mandragora, Lycopodium, Pygmaioi, and Adenium variants.  **delukard** again with the find.
+
+### Version 2.3
 - **Enhanced Plural Detection**: Added support for words ending in "y" that become "ies" in plural form (e.g., Damselfly → Damselflies)
 - **New Mob Family**: Added Crab family with support for Crab, Snipper, Cutter, Ironshell, and Claw variants
 - **Fixed Family Pattern Matching**: Corrected Lua pattern syntax in `extract_family_type()` - replaced invalid `(?:the )` regex syntax with proper Lua patterns to ensure "Members of the X Family" patterns are correctly identified
