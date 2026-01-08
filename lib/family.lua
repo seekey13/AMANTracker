@@ -89,7 +89,7 @@ local families = {
         excludes = {}
     },
     ["Mandragora"] = {
-        includes = { "Mandragora", "Pygmaioi", "Lycopodium", "Sylvestre", "Alraune", "Mourioche", "Alraune", "Korrigan", "Puck" },
+        includes = { "Mandragora", "Pygmaioi", "Lycopodium", "Sylvestre", "Alraune", "Mourioche", "Korrigan", "Puck" },
         excludes = {}
     },
 };
