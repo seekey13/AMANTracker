@@ -88,6 +88,10 @@ local families = {
         includes = { "Crab", "Snipper", "Cutter", "Ironshell", "Claw" },
         excludes = {}
     },
+    ["Mandragora"] = {
+        includes = { "Mandragora", "Pygmaioi", "Lycopodium", "Sylvestre", "Alraune", "Mourioche", "Alraune", "Korrigan", "Puck" },
+        excludes = {}
+    },
 };
 
 -- Check if an enemy name belongs to a specific family
