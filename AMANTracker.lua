@@ -109,7 +109,7 @@ end
 tracker_ui.init(training_data, saved_data.ui_mode or 'gdifonts');
 
 -- Auto-open UI if there's active training data
-if saved_data.is_active and training_data.enemies and #training_data.enemies > 0 then
+if training_data.is_active and #training_data.enemies > 0 then
     tracker_ui.open();
 end
 
