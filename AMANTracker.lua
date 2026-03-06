@@ -9,7 +9,7 @@ This addon is designed for Ashita v4.
 
 addon.name      = 'AMANTracker';
 addon.author    = 'Seekey';
-addon.version   = '2.6';
+addon.version   = '2.7';
 addon.desc      = 'GUI Tracker for Adventurers Mutual Aid Network Training Regimes';
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
@@ -169,8 +169,18 @@ local function find_enemy_by_name(enemy_name)
                 return enemy, i;
             end
             
+            -- Try es plural match (e.g., Leech -> Leeches, Batch -> Batches)
+            if enemy.name == enemy_name .. "es" then
+                return enemy, i;
+            end
+            
             -- Try plural to singular match (list is plural, message might be singular)
             if enemy.name:sub(-1) == "s" and enemy.name:sub(1, -2) == enemy_name then
+                return enemy, i;
+            end
+            
+            -- Try es plural to singular (e.g., list has "Leeches", defeated "Leech")
+            if enemy.name:sub(-2) == "es" and enemy.name:sub(1, -3) == enemy_name then
                 return enemy, i;
             end
             
@@ -203,7 +213,13 @@ local function find_enemy_by_name(enemy_name)
             if enemy.name == enemy_name .. "s" then
                 return enemy, i;
             end
+            if enemy.name == enemy_name .. "es" then
+                return enemy, i;
+            end
             if enemy.name:sub(-1) == "s" and enemy.name:sub(1, -2) == enemy_name then
+                return enemy, i;
+            end
+            if enemy.name:sub(-2) == "es" and enemy.name:sub(1, -3) == enemy_name then
                 return enemy, i;
             end
             
@@ -485,30 +501,38 @@ ashita.events.register('command', 'command_cb', function (e)
                     printf('    Family type extracted: "%s"', family_type);
                     local is_member = family.is_family_member(test_enemy, family_type);
                     if is_member then
-                        printf('    ✓ MATCH: "%s" is a member of "%s" family', test_enemy, family_type);
+                        printf('    MATCH: "%s" is a member of "%s" family', test_enemy, family_type);
                     else
-                        printf('    ✗ NO MATCH: "%s" is not a member of "%s" family', test_enemy, family_type);
+                        printf('    NO MATCH: "%s" is not a member of "%s" family', test_enemy, family_type);
                     end
                 else
                     errorf('    ERROR: Could not extract family type from "%s"', enemy.name);
                 end
             elseif enemy.match_type == 'exact' then
                 if enemy.name == test_enemy then
-                    printf('    ✓ MATCH: Exact match');
+                    printf('    MATCH: Exact match');
                 elseif enemy.name == test_enemy .. "s" then
-                    printf('    ✓ MATCH: Plural match');
+                    printf('    MATCH: Plural match (added "s")');
+                elseif enemy.name == test_enemy .. "es" then
+                    printf('    MATCH: Plural match (added "es")');
                 elseif enemy.name:sub(-1) == "s" and enemy.name:sub(1, -2) == test_enemy then
-                    printf('    ✓ MATCH: Singular match');
+                    printf('    MATCH: Singular match (removed "s")');
+                elseif enemy.name:sub(-2) == "es" and enemy.name:sub(1, -3) == test_enemy then
+                    printf('    MATCH: Singular match (removed "es")');
+                elseif enemy.name:sub(-3) == "ies" and enemy.name:sub(1, -4) .. "y" == test_enemy then
+                    printf('    MATCH: Plural match (y -> ies)');
+                elseif test_enemy:sub(-1) == "y" and enemy.name == test_enemy:sub(1, -2) .. "ies" then
+                    printf('    MATCH: Singular match (ies -> y)');
                 else
-                    printf('    ✗ NO MATCH: Not an exact, plural, or singular match');
+                    printf('    NO MATCH: Not an exact, plural, or singular match');
                 end
             else
                 printf('    Testing with legacy mode...');
                 local matched, match_idx = find_enemy_by_name(test_enemy);
                 if matched then
-                    printf('    ✓ MATCH: Found via legacy matching');
+                    printf('    MATCH: Found via legacy matching');
                 else
-                    printf('    ✗ NO MATCH: No legacy match found');
+                    printf('    NO MATCH: No legacy match found');
                 end
             end
         end
