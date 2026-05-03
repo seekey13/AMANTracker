@@ -9,7 +9,7 @@ This addon is designed for Ashita v4.
 
 addon.name      = 'AMANTracker';
 addon.author    = 'Seekey';
-addon.version   = '2.7';
+addon.version   = '2.6';
 addon.desc      = 'GUI Tracker for Adventurers Mutual Aid Network Training Regimes';
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
@@ -148,6 +148,10 @@ end
 -- Helper function to find enemy in tracking list by name
 -- Handles both singular and plural forms, as well as family matching
 local function find_enemy_by_name(enemy_name)
+    -- Strip special characters from the beginning of the name
+    -- (e.g., markers for special targets like daily targets)
+    enemy_name = enemy_name:match("^[^%a]*(.*)") or enemy_name;
+    
     for i, enemy in ipairs(training_data.enemies) do
         -- Use match_type to optimize matching
         if enemy.match_type == 'family' then

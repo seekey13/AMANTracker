@@ -156,7 +156,14 @@ Completely unnecessary AI generated image
 
 
 ## Changelog
-### Version 2.4 (Current)
+### Version 2.6 (Current)
+- **Enhanced Matching Logic**: Updated matching logic to accommodate when enemy is a Summit of the Stars target
+- **Fixed Plural Issue**: Fixed plural handling for Leech/Leeches
+
+### Version 2.5 
+- **gdifonts Folder**: Add contents of gdifonts folder to release.
+
+### Version 2.4
 - **New Mob Family**: Added Mandragora family with support for Mandragora, Lycopodium, Pygmaioi, and Adenium variants.  **delukard** again with the find.
 
 ### Version 2.3
