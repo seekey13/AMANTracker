@@ -197,43 +197,6 @@ local function find_enemy_by_name(enemy_name)
             if enemy_name:sub(-1) == "y" and enemy.name == enemy_name:sub(1, -2) .. "ies" then
                 return enemy, i;
             end
-        else
-            -- Legacy support: no match_type specified, try all methods
-            
-            -- Exact match
-            if enemy.name == enemy_name then
-                return enemy, i;
-            end
-            
-            -- Check if enemy.name is a family pattern
-            local family_type = family.extract_family_type(enemy.name);
-            if family_type then
-                if family.is_family_member(enemy_name, family_type) then
-                    return enemy, i;
-                end
-            end
-            
-            -- Try singular/plural variations
-            if enemy.name == enemy_name .. "s" then
-                return enemy, i;
-            end
-            if enemy.name == enemy_name .. "es" then
-                return enemy, i;
-            end
-            if enemy.name:sub(-1) == "s" and enemy.name:sub(1, -2) == enemy_name then
-                return enemy, i;
-            end
-            if enemy.name:sub(-2) == "es" and enemy.name:sub(1, -3) == enemy_name then
-                return enemy, i;
-            end
-            
-            -- Try y -> ies transformation
-            if enemy.name:sub(-3) == "ies" and enemy.name:sub(1, -4) .. "y" == enemy_name then
-                return enemy, i;
-            end
-            if enemy_name:sub(-1) == "y" and enemy.name == enemy_name:sub(1, -2) .. "ies" then
-                return enemy, i;
-            end
         end
     end
     
@@ -251,7 +214,6 @@ local function handle_tome_interaction()
 end
 
 local function handle_training_start()
-    training_data.is_parsing = true;
     clear_training_data();
     training_data.is_active = true;
     training_data.is_parsing = true;
@@ -291,7 +253,6 @@ local function handle_training_area(msg)
 end
 
 local function handle_regime_confirmation()
-    print(MESSAGES.REGIME_CONFIRMED_MSG);
     local enemy_str = "";
     for i, enemy in ipairs(training_data.enemies) do
         if i > 1 then enemy_str = enemy_str .. ", " end

@@ -60,10 +60,6 @@ local families = {
         includes = { "Bat", "Bats", "Stirge", "Gaylas" },
         excludes = { "Gigas's", "Goblin's" }
     },
-    ["Bats"] = {
-        includes = { "Bat", "Bats", "Stirge", "Gaylas" },
-        excludes = { "Gigas's", "Goblin's" }
-    },
     ["Antica"] = {
         includes = { "Antica" },
         excludes = {}

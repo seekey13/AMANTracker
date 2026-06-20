@@ -45,15 +45,6 @@ local font_settings = T{
         outline_color = 0xFF000000,
         outline_width = 2,
     },
-    progress = T{
-        font_alignment = gdi.Alignment.Left,
-        font_color = 0xFF00FF00,        -- Green
-        font_family = 'Consolas',
-        font_flags = gdi.FontFlags.Bold,
-        font_height = 14,
-        outline_color = 0xFF000000,
-        outline_width = 2,
-    },
 };
 
 -- ============================================================================
@@ -61,7 +52,6 @@ local font_settings = T{
 -- ============================================================================
 
 local SPACING_VERTICAL = 5;  -- Vertical spacing between elements
-local SPACING_HORIZONTAL = 10;  -- Horizontal spacing for inline elements
 local SPACING_NAME_TO_PROGRESS = 2;  -- Space between enemy name and progress bar
 
 -- Window position settings (nil = user controlled, or set {x, y} for default position)
@@ -71,17 +61,7 @@ local window_position = nil;  -- Example: { 100, 100 } to position at x=100, y=1
 -- Helper Functions
 -- ============================================================================
 
--- Format enemy names for display with proper capitalization
 local function format_enemy_name_for_display(enemy_name)
-    -- Check if this is a family pattern (e.g., "members of the bee family")
-    local family_type = enemy_name:match("^[Mm]ember[s]? of (?:the )?(.+) [Ff]amily$");
-    if family_type then
-        -- Capitalize "Members" and the first letter of family name
-        local capitalized_family = family_type:sub(1,1):upper() .. family_type:sub(2):lower();
-        return string.format("Members of the %s Family", capitalized_family);
-    end
-    
-    -- For non-family enemies, return as-is
     return enemy_name;
 end
 
@@ -102,13 +82,8 @@ local function initialize_ui_objects()
     
     -- Clear out old enemy entries
     for i, entry in ipairs(ui_objects.enemy_entries) do
-        if entry ~= nil then
-            if entry.name_text ~= nil then
-                gdi:destroy_object(entry.name_text);
-            end
-            if entry.progress_text ~= nil then
-                gdi:destroy_object(entry.progress_text);
-            end
+        if entry ~= nil and entry.name_text ~= nil then
+            gdi:destroy_object(entry.name_text);
         end
     end
     ui_objects.enemy_entries = {};
@@ -135,9 +110,6 @@ local function set_text_visible(visible, num_enemies)
         local entry_visible = visible and i <= num_enemies;
         if entry.name_text then
             entry.name_text:set_visible(entry_visible);
-        end
-        if entry.progress_text then
-            entry.progress_text:set_visible(entry_visible);
         end
     end
 end
@@ -172,13 +144,8 @@ function tracker_ui.set_ui_mode(mode)
             ui_objects.level_range_text = nil;
         end
         for i, entry in ipairs(ui_objects.enemy_entries) do
-            if entry ~= nil then
-                if entry.name_text ~= nil then
-                    gdi:destroy_object(entry.name_text);
-                end
-                if entry.progress_text ~= nil then
-                    gdi:destroy_object(entry.progress_text);
-                end
+            if entry ~= nil and entry.name_text ~= nil then
+                gdi:destroy_object(entry.name_text);
             end
         end
         ui_objects.enemy_entries = {};
@@ -346,9 +313,7 @@ local function render_gdifonts_mode()
                 -- Create entry objects if they don't exist
                 local entry = ui_objects.enemy_entries[i];
                 if entry == nil then
-                    entry = {};
-                    entry.name_text = gdi:create_object(font_settings.entry);
-                    entry.progress_text = gdi:create_object(font_settings.progress);
+                    entry = { name_text = gdi:create_object(font_settings.entry) };
                     ui_objects.enemy_entries[i] = entry;
                 end
                 
@@ -385,25 +350,18 @@ local function render_gdifonts_mode()
                 
                 -- Reset cursor to ensure consistent positioning for next enemy
                 imgui.SetCursorScreenPos({ cursor_x, cursor_y + offsetY });
-                
-                -- Hide the progress text object since we're using ImGui progress bar
-                if entry.progress_text then
-                    entry.progress_text:set_visible(false);
-                end
             end
             
             -- Hide any extra enemy entries that aren't being used
             for i = #training_data.enemies + 1, #ui_objects.enemy_entries do
                 if ui_objects.enemy_entries[i] then
                     ui_objects.enemy_entries[i].name_text:set_visible(false);
-                    ui_objects.enemy_entries[i].progress_text:set_visible(false);
                 end
             end
         else
             -- Hide all enemy entries if no data
             for i, entry in ipairs(ui_objects.enemy_entries) do
                 entry.name_text:set_visible(false);
-                entry.progress_text:set_visible(false);
             end
         end
         

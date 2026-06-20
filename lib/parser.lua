@@ -71,18 +71,4 @@ function parser.escape_pattern(str)
     return str:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1");
 end
 
--- Parse single enemy line (legacy format - now unused but kept for compatibility)
--- Returns: count (number), name (string) or nil, nil
-function parser.parse_enemy_line(line)
-    if should_exclude_line(line) then
-        return nil, nil;
-    end
-    
-    local count, name = string.match(line, "^%s*(%d+)%s+([^%.]+)%.");
-    if count and name then
-        return tonumber(count), name;
-    end
-    return nil, nil;
-end
-
 return parser;

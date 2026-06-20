@@ -80,17 +80,6 @@ local function get_entity_name(server_id)
     return nil;
 end
 
--- Get player server ID
--- Returns:
---   number - Player's server ID or 0
-local function get_player_id()
-    local party = AshitaCore:GetMemoryManager():GetParty();
-    if party then
-        return party:GetMemberServerId(0);
-    end
-    return 0;
-end
-
 -- Check if an actor is in the player's party or is a pet/trust belonging to a party member
 -- Args:
 --   actor_id (number) - Actor's server ID
@@ -160,8 +149,6 @@ end
 -- Args:
 --   am (table) - Parsed action message data
 local function handle_action_message(am)
-    local player_id = get_player_id();
-    
     -- Message 6: "${actor} defeats ${target}."
     -- Used to capture the enemy name when player defeats an enemy
     if am.message_id == MESSAGE_IDS.DEFEAT then
