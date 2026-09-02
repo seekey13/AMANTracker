@@ -83,8 +83,15 @@ local training_data = {
     training_area_zone = nil,
     raw_enemy_lines = {},  -- Debug: capture all raw lines between markers
     last_defeated_enemy = nil,  -- Track last defeated enemy name for progress matching
+    last_defeated_enemy_at = nil,  -- os.time() the above was set; not persisted, see LAST_DEFEATED_ENEMY_TTL
     last_packet_progress = nil,  -- Track last progress from packet to avoid duplicate text processing
 };
+
+-- Seconds a pending last_defeated_enemy stays usable. A death message with no
+-- 558 behind it (a stranger finishing a mob we merely touched) would otherwise
+-- sit here until the *next* 558 wrote that unrelated number into it. A 558
+-- follows its death message in the same packet burst, so this is generous.
+local LAST_DEFEATED_ENEMY_TTL = 3;
 
 -- Prints every death message the packet handler sees, with the actor and target
 -- IDs and whether the kill was credited. Off by default, toggled by /at debug.
@@ -149,7 +156,8 @@ local function clear_training_data()
     training_data.training_area_zone = nil;
     training_data.raw_enemy_lines = {};
     training_data.last_defeated_enemy = nil;
-    
+    training_data.last_defeated_enemy_at = nil;
+
     -- Save the cleared state
     save_training_data();
 end
@@ -334,13 +342,17 @@ local function handle_enemy_defeat(target_name)
         local enemy, index = find_enemy_by_name(target_name);
         if enemy then
             training_data.last_defeated_enemy = target_name;
+            training_data.last_defeated_enemy_at = os.time();
         end
     end
 end
 
 local function handle_progress_update(current, total)
-    -- Find enemy and update kill count
-    if training_data.last_defeated_enemy then
+    -- Find enemy and update kill count, but only from a death message that's
+    -- still fresh: a pending name older than LAST_DEFEATED_ENEMY_TTL is not
+    -- this 558's death, so it must be ignored rather than credited.
+    if training_data.last_defeated_enemy and training_data.last_defeated_enemy_at
+        and (os.time() - training_data.last_defeated_enemy_at) <= LAST_DEFEATED_ENEMY_TTL then
         local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
         if enemy then
             enemy.killed = current;
@@ -348,6 +360,7 @@ local function handle_progress_update(current, total)
         end
     end
     training_data.last_defeated_enemy = nil;
+    training_data.last_defeated_enemy_at = nil;
 end
 
 -- Message handler dispatch table

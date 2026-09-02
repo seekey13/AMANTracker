@@ -57,7 +57,7 @@ Or the typical ImGui
 - `/at ui gdifonts` - Switch to transparent floating text mode (default)
 - `/at ui imgui` - Switch to classic solid window mode
 - `/at clear` - Clear current training data and reset tracker
-- `/at debug` - Toggle death-packet logging (prints actor, target and credit decision)
+- `/at debug` - Toggle death-packet logging (prints message id, actor, target, target index and credit decision)
 
 
 ## How It Works
@@ -66,7 +66,7 @@ Or the typical ImGui
 The addon uses a dual-layer approach for maximum reliability:
 
 **Packet-Based Detection** (Primary):
-- **Enemy Defeats** - Intercepts action message packet 0x29 (message IDs 6, 646)
+- **Enemy Defeats** - Intercepts action message packet 0x29 (death message IDs 6, 20, 113, 406, 605, 646); deaths with no usable actor (20, 605) are credited only if the dying mob is on an engaged-mob list built from Action packets (0x28), which is cleared on zone change (packets 0x0A/0x0B)
 - **Progress Updates** - Reads progress directly from packets (message IDs 558, 698)
 - **Regime Resets** - Detects "begin anew" via packet (message ID 643)
 - **Regime Completion** - Monitors completion messages (message ID 559)
@@ -162,8 +162,8 @@ Completely unnecessary AI generated image
 - Self-destruct and damage-over-time deaths arrive as action message 20 ("The Bomb falls to the ground."), which names no actor the client can match against the party, so the kill was silently dropped
 - Added death messages 20, 113 (spell), 406 (weapon skill) and 605 (additional effect) alongside the existing 6 and 646
 - Added an engaged-mob list, built from Action packets (0x28), of every mob a party member or their pet has acted on; an actor-less death is credited only if the dying mob is on it
-- Engagements expire after 15 minutes and clear on zone change, since server IDs are reused
-- Added `/at debug` to log every death message with its actor, target and credit decision
+- Each engagement carries a 15-minute TTL, checked lazily whenever that server id is looked up again -- a stale entry otherwise just sits until the next zone change, when every entry is cleared outright since server IDs are reused
+- Added `/at debug` to log every death message with its actor, target, target index and credit decision
 - Removed the unused `get_player_id` helper
 
 ### Version 2.7
@@ -231,7 +231,7 @@ Completely unnecessary AI generated image
 - **Major Update: Hybrid Packet/Text Detection System**
 - Added packet handler module for reliable event detection
 - Intercepts action message packets (0x29) for enemy defeats and progress
-- Packet-based tracking for defeats (message IDs 6, 646)
+- Packet-based tracking for defeats (message IDs 6, 20, 113, 406, 605, 646); actor-less deaths (20, 605) credited via an engaged-mob list built from Action packets (0x28), cleared on zone change (0x0A/0x0B)
 - Packet-based progress updates (message ID 558 for AMAN-specific tracking)
 - Packet-based regime reset detection (message ID 643)
 - Packet-based regime completion detection (message ID 559)

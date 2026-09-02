@@ -56,6 +56,9 @@ _G.AshitaCore = {
                 return {
                     GetMemberServerId = function (_, i) return party_ids[i] or 0; end,
                     GetMemberTargetIndex = function (_, i) return party_indexes[i] or 0; end,
+                    -- Active whenever the slot is occupied; no scenario here needs
+                    -- a stale non-zero id sitting in a vacated slot.
+                    GetMemberIsActive = function (_, i) return (party_ids[i] and party_ids[i] ~= 0) and 1 or 0; end,
                 };
             end,
             GetEntity = function ()
@@ -93,7 +96,7 @@ end
 -- usable actor, but the mob is on our engaged list.
 set_world({
     party_ids = { [0] = 0x01000001 },
-    entities = { [17] = { ServerId = 0x02000123, Name = 'Bomb', PetTargetIndex = 0 } },
+    entities = { [17] = { ServerId = 0x02000123, Name = 'Bomb', PetTargetIndex = 0, SpawnFlags = 0x10 } },
 });
 packet_handler.record_engagement(0x02000123);
 packet_handler.handle_incoming_packet({
@@ -106,7 +109,7 @@ assert_eq(defeats[1], 'Bomb', 'engaged self-destruct name');
 -- The same death for a mob we never touched is somebody else's kill.
 set_world({
     party_ids = { [0] = 0x01000001 },
-    entities = { [17] = { ServerId = 0x02000123, Name = 'Bomb', PetTargetIndex = 0 } },
+    entities = { [17] = { ServerId = 0x02000123, Name = 'Bomb', PetTargetIndex = 0, SpawnFlags = 0x10 } },
 });
 packet_handler.handle_incoming_packet({
     id = 0x29,
@@ -118,7 +121,7 @@ assert_eq(#defeats, 0, 'unengaged self-destruct ignored');
 for _, id in ipairs({ 113, 406, 605 }) do
     set_world({
         party_ids = { [0] = 0x01000001 },
-        entities = { [17] = { ServerId = 0x02000123, Name = 'Bomb', PetTargetIndex = 0 } },
+        entities = { [17] = { ServerId = 0x02000123, Name = 'Bomb', PetTargetIndex = 0, SpawnFlags = 0x10 } },
     });
     packet_handler.record_engagement(0x02000123);
     packet_handler.handle_incoming_packet({
@@ -131,27 +134,100 @@ end
 -- An engagement older than the TTL is stale: a server id can be reused.
 set_world({
     party_ids = { [0] = 0x01000001 },
-    entities = { [17] = { ServerId = 0x02000123, Name = 'Bomb', PetTargetIndex = 0 } },
+    entities = { [17] = { ServerId = 0x02000123, Name = 'Bomb', PetTargetIndex = 0, SpawnFlags = 0x10 } },
 });
 packet_handler.record_engagement(0x02000123, os.time() - 5000);
 assert_eq(packet_handler.is_engaged(0x02000123), false, 'stale engagement expires');
+
+-- ---------------------------------------------------------------------------
+-- Credit via is_in_party (message 6 names the actor directly)
+-- ---------------------------------------------------------------------------
+
+-- A party member's own kill credits outright -- message 6 names the actor,
+-- so it doesn't matter that the target was never separately engaged.
+set_world({
+    party_ids = { [0] = 0x01000001 },
+    entities = {
+        [1] = { ServerId = 0x01000001, Name = 'You', PetTargetIndex = 0, SpawnFlags = 0x02 },
+        [18] = { ServerId = 0x02000456, Name = 'Goblin', PetTargetIndex = 0, SpawnFlags = 0x10 },
+    },
+});
+packet_handler.handle_incoming_packet({
+    id = 0x29,
+    data = message_packet(0x01000001, 0x02000456, 6),
+});
+assert_eq(#defeats, 1, 'party actor kill credited');
+assert_eq(defeats[1], 'Goblin', 'party actor kill name');
+
+-- A stranger's kill is nobody's here: not a party actor, and the target was
+-- never engaged either.
+set_world({
+    party_ids = { [0] = 0x01000001 },
+    entities = {
+        [1] = { ServerId = 0x01000001, Name = 'You', PetTargetIndex = 0, SpawnFlags = 0x02 },
+        [18] = { ServerId = 0x02000456, Name = 'Goblin', PetTargetIndex = 0, SpawnFlags = 0x10 },
+    },
+});
+packet_handler.handle_incoming_packet({
+    id = 0x29,
+    data = message_packet(0x0100BEEF, 0x02000456, 6),
+});
+assert_eq(#defeats, 0, 'stranger kill not credited');
+
+-- A party member (cured, then killed) can land on the engaged list the same
+-- as a mob would, but get_mob_name refuses to name a non-monster, so the
+-- death is never credited. Regression test for Fix 1.
+set_world({
+    party_ids = { [0] = 0x01000001 },
+    entities = { [5] = { ServerId = 0x01000777, Name = 'Sakura', PetTargetIndex = 0, SpawnFlags = 0x02 } },
+});
+packet_handler.record_engagement(0x01000777);
+packet_handler.handle_incoming_packet({
+    id = 0x29,
+    data = message_packet(0, 0x01000777, 20),
+});
+assert_eq(#defeats, 0, 'engaged party member death not credited');
 
 -- ---------------------------------------------------------------------------
 -- Engagement recording from Action packets (0x28)
 -- ---------------------------------------------------------------------------
 
 -- Scripted bit reader: parse_action walks 0x28's bit-packed fields in a fixed
--- order, so feeding it a queue proves the field widths line up without
--- reimplementing Ashita's bit primitive.
+-- order, so feeding it a queue lets each call return the scripted value
+-- without reimplementing Ashita's bit primitive. The stub also records each
+-- call's width (n) argument, so the actual sequence of widths parse_action
+-- reads can be asserted against the widths it is expected to read -- without
+-- that, transposing two field widths in parse_action would still pass, since
+-- the values returned never depended on width.
 local bit_reads = 0;
+local widths_seen = {};
 
 local function script_bits(values)
     local i = 0;
     bit_reads = 0;
-    _G.ashita.bits.unpack_be = function ()
+    widths_seen = {};
+    _G.ashita.bits.unpack_be = function (_, _, _, n)
         i = i + 1;
         bit_reads = bit_reads + 1;
+        widths_seen[#widths_seen + 1] = n;
         return values[i] or 0;
+    end
+end
+
+-- Field widths parse_action reads, in order, for one melee_round() target with
+-- one action and no additional/spikes effect. Verified against parse_action's
+-- own bits(n) calls: actor(32), target_count(6), reserved(4), type(4),
+-- param(32), recast(32), target_id(32), action_count(4), then the seven
+-- reaction..flags fields (5,12,7,3,17,10,31), and finally the two 1-bit
+-- additional-effect/spikes-effect flags.
+local MELEE_ROUND_WIDTHS = {
+    32, 6, 4, 4, 32, 32, 32, 4, 5, 12, 7, 3, 17, 10, 31, 1, 1,
+};
+
+local function assert_widths_eq(actual, expected, label)
+    assert_eq(#actual, #expected, label .. ' (count)');
+    for i = 1, #expected do
+        assert_eq(actual[i], expected[i], ('%s (field %d)'):format(label, i));
     end
 end
 
@@ -178,14 +254,15 @@ set_world({ party_ids = { [0] = 0x01000001 }, party_indexes = { [0] = 1 } });
 script_bits(melee_round(0x01000001, 0x02000123));
 packet_handler.handle_incoming_packet({ id = 0x28, data_raw = '', size = 256 });
 assert_eq(packet_handler.is_engaged(0x02000123), true, 'own action engages target');
+assert_widths_eq(widths_seen, MELEE_ROUND_WIDTHS, 'melee round field widths');
 
 -- A party member's pet counts as ours.
 set_world({
     party_ids = { [0] = 0x01000001 },
     party_indexes = { [0] = 1 },
     entities = {
-        [1] = { ServerId = 0x01000001, Name = 'You', PetTargetIndex = 20 },
-        [20] = { ServerId = 0x03000999, Name = 'Carbuncle', PetTargetIndex = 0 },
+        [1] = { ServerId = 0x01000001, Name = 'You', PetTargetIndex = 20, SpawnFlags = 0x02 },
+        [20] = { ServerId = 0x03000999, Name = 'Carbuncle', PetTargetIndex = 0, SpawnFlags = 0x10 },
     },
 });
 script_bits(melee_round(0x03000999, 0x02000123));

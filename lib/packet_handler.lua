@@ -47,6 +47,7 @@ local callbacks = {
     on_progress = nil,
     on_regime_complete = nil,
     on_regime_reset = nil,
+    on_debug = nil,
 };
 
 -- Initialize the packet handler with callbacks
@@ -56,6 +57,7 @@ local callbacks = {
 --     on_progress(current, total) - Called when progress update is received
 --     on_regime_complete() - Called when regime is completed
 --     on_regime_reset() - Called when regime resets
+--     on_debug(fmt, ...) - Called with a death-message trace line
 function packet_handler.init(handlers)
     callbacks = handlers or {};
 end
@@ -83,25 +85,31 @@ local function parse_action_message(data)
     return am;
 end
 
--- Get entity name by server ID
+-- Get a monster's name by server ID. Refuses to name a non-monster (a party
+-- member, an NPC) even if its server ID is the one asked for -- SpawnFlags bit
+-- 0x10 is the client's own monster flag (PCs carry 0x02 instead), read
+-- arithmetically since this file has no `bit` library available.
 -- Args:
 --   server_id (number) - Entity server ID
 -- Returns:
---   string - Entity name or nil
-local function get_entity_name(server_id)
+--   string - Monster's name, or nil if no monster entity has that server ID
+local function get_mob_name(server_id)
     local entity_mgr = AshitaCore:GetMemoryManager():GetEntity();
     if not entity_mgr then
         return nil;
     end
-    
+
     -- Search through all entities to find matching server ID
     for i = 0, 2303 do
         local entity = entity_mgr:GetRawEntity(i);
         if entity and entity.ServerId == server_id then
-            return entity.Name;
+            if (entity.SpawnFlags // 0x10) % 2 == 1 then
+                return entity.Name;
+            end
+            return nil;
         end
     end
-    
+
     return nil;
 end
 
@@ -183,11 +191,16 @@ local function handle_action_message(am)
     -- absolute progress number. All this does is resolve the dead mob's name so
     -- 558 knows which tracked enemy to write that number into.
     if DEATH_MESSAGE_IDS[am.message_id] then
-        local credited = is_in_party(am.actor_id) or packet_handler.is_engaged(am.target_id);
+        -- is_engaged is an O(1) hash lookup; is_in_party walks the entity table
+        -- (thousands of native reads across party slots, pets and trusts).
+        -- Messages 20 and 605 never name a party actor, so is_in_party's work
+        -- would be guaranteed wasted for them -- checking is_engaged first
+        -- means it never runs unless it might actually be needed.
+        local credited = packet_handler.is_engaged(am.target_id) or is_in_party(am.actor_id);
 
         if callbacks.on_debug then
-            callbacks.on_debug('death msg=%d actor=%d target=%d credited=%s',
-                am.message_id, am.actor_id, am.target_id, tostring(credited));
+            callbacks.on_debug('death msg=%d actor=%d target=%d target_index=%d credited=%s',
+                am.message_id, am.actor_id, am.target_id, am.target_index, tostring(credited));
         end
 
         -- The mob is dead; its entry can never help again, and leaving it would
@@ -195,7 +208,7 @@ local function handle_action_message(am)
         packet_handler.clear_engagement(am.target_id);
 
         if credited and callbacks.on_defeat then
-            local target_name = get_entity_name(am.target_id);
+            local target_name = get_mob_name(am.target_id);
             if target_name then
                 callbacks.on_defeat(target_name);
             end
@@ -288,7 +301,7 @@ local function party_actor_ids()
 
     for i = 0, 5 do
         local member_id = party:GetMemberServerId(i);
-        if member_id ~= 0 then
+        if member_id ~= 0 and party:GetMemberIsActive(i) == 1 then
             ids[member_id] = true;
 
             local member_index = party:GetMemberTargetIndex(i);
@@ -376,10 +389,13 @@ end
 --   e (table) - Packet event data for an Action packet (0x28)
 local function record_engagements(e)
     -- ponytail: party members are recorded alongside mobs rather than filtered
-    -- out with a SpawnFlags check, because the set is only ever read when a
-    -- death message names that server ID as the dying target and the name still
-    -- has to match a tracked enemy. Add the flag check if the set ever grows
-    -- enough to matter.
+    -- out with a SpawnFlags check here. A cure, a buff, or an AoE lands this
+    -- set with a party member's server ID as readily as a mob's, so this list
+    -- alone does NOT prove a dying entity is a monster. What makes that
+    -- harmless is get_mob_name's SpawnFlags check at credit time, which
+    -- refuses to name anything this set holds that isn't actually a monster.
+    -- Add the flag check here too if the set ever grows enough to matter for
+    -- its own sake (e.g. size, or another reader that trusts it directly).
     local targets = parse_action(e, party_actor_ids());
     if #targets == 0 then
         return;
