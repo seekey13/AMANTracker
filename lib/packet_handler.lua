@@ -267,16 +267,148 @@ function packet_handler.clear_engagement(server_id)
     engaged[server_id] = nil;
 end
 
+-- Every server ID that counts as "ours" for engagement purposes: the six party
+-- slots plus each member's pet/avatar/automaton, which has no party slot of its
+-- own. Reached through each slot's target index, so this costs a dozen memory
+-- reads rather than a walk of the entity table.
+--
+-- Trusts are deliberately not included: a trust only ever acts against something
+-- a party member is already acting against, so the party member's own action
+-- already covers whatever the trust would have added.
+--
+-- Returns:
+--   table - Set of server IDs, keyed by ID, valued true
+local function party_actor_ids()
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    local entity_mgr = AshitaCore:GetMemoryManager():GetEntity();
+    local ids = {};
+    if not party or not entity_mgr then
+        return ids;
+    end
+
+    for i = 0, 5 do
+        local member_id = party:GetMemberServerId(i);
+        if member_id ~= 0 then
+            ids[member_id] = true;
+
+            local member_index = party:GetMemberTargetIndex(i);
+            local member = member_index ~= 0 and entity_mgr:GetRawEntity(member_index) or nil;
+            if member and member.PetTargetIndex > 0 then
+                local pet = entity_mgr:GetRawEntity(member.PetTargetIndex);
+                if pet then
+                    ids[pet.ServerId] = true;
+                end
+            end
+        end
+    end
+
+    return ids;
+end
+
+-- Minimal decode of an Action packet (0x28): who acted, and which server IDs
+-- they targeted. This packet is bit-packed rather than byte-aligned like 0x29,
+-- so it needs ashita.bits.unpack_be instead of struct.unpack.
+--
+-- Every field between the actor ID and the target list, and every field inside
+-- each target's actions, is read even though none of the values are kept: the
+-- packet is packed bit by bit, so a field cannot be skipped without decoding its
+-- width first. The actor ID comes first, so a packet from somebody else's action
+-- bails after 32 bits -- which is most of them in a crowded zone.
+--
+-- Args:
+--   e (table) - Packet event data (needs e.data_raw and e.size)
+--   mine (table) - Set of server IDs that count as ours
+-- Returns:
+--   table - Array of target server IDs, empty when the actor is not ours
+local function parse_action(e, mine)
+    local bit_offset = 40; -- header
+    local max_bits = e.size * 8;
+
+    local function bits(n)
+        if (bit_offset + n) > max_bits then
+            max_bits = 0; -- malformed; every further read returns 0
+            return 0;
+        end
+        local v = ashita.bits.unpack_be(e.data_raw, 0, bit_offset, n);
+        bit_offset = bit_offset + n;
+        return v;
+    end
+
+    local actor_id = bits(32);
+    if not mine[actor_id] then
+        return {};
+    end
+
+    local target_count = bits(6);
+    bits(4); -- reserved
+    local action_type = bits(4);
+    if action_type == 8 or action_type == 9 then
+        bits(16); bits(16); -- Param, SpellGroup
+    else
+        bits(32); -- Param
+    end
+    bits(32); -- Recast
+
+    local targets = {};
+    for _ = 1, target_count do
+        local target_id = bits(32);
+        if max_bits == 0 then
+            break; -- packet ran out mid-read; nothing past here is real data
+        end
+        targets[#targets + 1] = target_id;
+
+        for _ = 1, bits(4) do -- action count
+            bits(5); bits(12); bits(7); bits(3); bits(17); bits(10); bits(31); -- reaction..flags
+            if bits(1) == 1 then
+                bits(10); bits(17); bits(10); -- additional effect
+            end
+            if bits(1) == 1 then
+                bits(10); bits(14); bits(10); -- spikes effect
+            end
+        end
+    end
+
+    return targets;
+end
+
+-- Record every mob a party action touched
+-- Args:
+--   e (table) - Packet event data for an Action packet (0x28)
+local function record_engagements(e)
+    -- ponytail: party members are recorded alongside mobs rather than filtered
+    -- out with a SpawnFlags check, because the set is only ever read when a
+    -- death message names that server ID as the dying target and the name still
+    -- has to match a tracked enemy. Add the flag check if the set ever grows
+    -- enough to matter.
+    local targets = parse_action(e, party_actor_ids());
+    if #targets == 0 then
+        return;
+    end
+
+    local now = os.time();
+    for _, target_id in ipairs(targets) do
+        packet_handler.record_engagement(target_id, now);
+    end
+end
+
 -- Handle incoming packet
 -- Args:
 --   e (table) - Packet event data
 function packet_handler.handle_incoming_packet(e)
-    -- Only process action message packets (0x29)
+    -- Action message: defeats, progress, regime state
     if e.id == 0x29 then
         local am = parse_action_message(e.data);
         if am then
             handle_action_message(am);
         end
+
+    -- Action: who hit what, which is how a mob gets onto the engaged list
+    elseif e.id == 0x28 then
+        record_engagements(e);
+
+    -- Zone in / zone out. Server IDs are only unique within one zone instance.
+    elseif e.id == 0x0A or e.id == 0x0B then
+        packet_handler.clear_engagements();
     end
 end
 
