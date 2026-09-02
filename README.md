@@ -156,7 +156,11 @@ Completely unnecessary AI generated image
 
 
 ## Changelog
-### Version 2.6 (Current)
+### Version 2.7 (Current)
+- **Fixed Startup Display**: The tracker no longer stays hidden when the addon loads while the game is still booting. Ashita only hands an addon the character's saved settings once you log in, so the saved regime, UI mode, and window visibility are now restored on that login event instead of only at load. `/at ui` is no longer needed after every launch.
+- **Fixed UI Mode Reset**: `ui_mode` is no longer overwritten when hunt progress is saved, so `/at ui imgui` sticks across sessions.
+
+### Version 2.6
 - **Enhanced Matching Logic**: Updated matching logic to accommodate when enemy is a Summit of the Stars target
 - **Fixed Plural Issue**: Fixed plural handling for Leech/Leeches
 
