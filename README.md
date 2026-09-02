@@ -157,7 +157,7 @@ Completely unnecessary AI generated image
 
 
 ## Changelog
-### Version 2.8 (Current)
+### Version 2.7 (Current)
 - **Fixed Actor-less Kill Credit**: Self-destruct and damage-over-time deaths arrive as action message 20 ("The Bomb falls to the ground."), which names no actor the client can match against the party, so the kill was silently dropped
 - **Expanded Death Message Detection**: Added messages 20, 113 (spell), 406 (weapon skill) and 605 (additional effect) alongside the existing 6 and 646
 - **Added Engaged-Mob List**: Built from Action packets (0x28), tracking every mob a party member or their pet has acted on; an actor-less death is credited only if the dying mob is on it
@@ -165,8 +165,6 @@ Completely unnecessary AI generated image
 - **Monster-Only Credit**: A death is only credited when the dying entity is actually a monster, so a party member who dies after being cured can never be counted as a kill
 - **New `/at debug` Command**: Logs every death message with its actor, target, target index, credit decision and resolved name
 - **Removed Dead Code**: Dropped the unused `get_player_id` helper
-
-### Version 2.7
 - **Fixed Startup Display**: The tracker no longer stays hidden when the addon loads while the game is still booting. Ashita only hands an addon the character's saved settings once you log in, so the saved regime, UI mode, and window visibility are now restored on that login event instead of only at load. `/at ui` is no longer needed after every launch.
 - **Fixed UI Mode Reset**: `ui_mode` is no longer overwritten when hunt progress is saved, so `/at ui imgui` sticks across sessions.
 
