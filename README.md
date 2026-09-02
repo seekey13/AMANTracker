@@ -57,7 +57,7 @@ Or the typical ImGui
 - `/at ui gdifonts` - Switch to transparent floating text mode (default)
 - `/at ui imgui` - Switch to classic solid window mode
 - `/at clear` - Clear current training data and reset tracker
-- `/at debug` - Toggle death-packet logging (prints message id, actor, target, target index and credit decision)
+- `/at debug` - Toggle death-packet logging (prints message id, actor, target, target index, credit decision and resolved name)
 
 
 ## How It Works
@@ -163,7 +163,7 @@ Completely unnecessary AI generated image
 - Added death messages 20, 113 (spell), 406 (weapon skill) and 605 (additional effect) alongside the existing 6 and 646
 - Added an engaged-mob list, built from Action packets (0x28), of every mob a party member or their pet has acted on; an actor-less death is credited only if the dying mob is on it
 - Each engagement carries a 15-minute TTL, checked lazily whenever that server id is looked up again -- a stale entry otherwise just sits until the next zone change, when every entry is cleared outright since server IDs are reused
-- Added `/at debug` to log every death message with its actor, target, target index and credit decision
+- Added `/at debug` to log every death message with its actor, target, target index, credit decision and resolved name
 - Removed the unused `get_player_id` helper
 
 ### Version 2.7

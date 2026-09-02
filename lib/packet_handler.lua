@@ -128,15 +128,15 @@ local function is_in_party(actor_id)
     -- Check all 6 party slots (0-5) for party members
     for i = 0, 5 do
         local member_id = party:GetMemberServerId(i);
-        if member_id ~= 0 and member_id == actor_id then
+        if member_id ~= 0 and party:GetMemberIsActive(i) == 1 and member_id == actor_id then
             return true;
         end
     end
-    
+
     -- Check if the actor is a pet of any party member (including local player)
     for i = 0, 5 do
         local member_id = party:GetMemberServerId(i);
-        if member_id ~= 0 then
+        if member_id ~= 0 and party:GetMemberIsActive(i) == 1 then
             -- Find the party member's entity
             for j = 1, 2303 do
                 local entity = entity_mgr:GetRawEntity(j);
@@ -165,7 +165,7 @@ local function is_in_party(actor_id)
                     -- Check if trust owner is in party
                     for j = 0, 5 do
                         local member_id = party:GetMemberServerId(j);
-                        if member_id ~= 0 and member_id == owner_entity.ServerId then
+                        if member_id ~= 0 and party:GetMemberIsActive(j) == 1 and member_id == owner_entity.ServerId then
                             return true;
                         end
                     end
@@ -198,20 +198,23 @@ local function handle_action_message(am)
         -- means it never runs unless it might actually be needed.
         local credited = packet_handler.is_engaged(am.target_id) or is_in_party(am.actor_id);
 
+        -- Resolve the name before logging so the debug line reflects what
+        -- actually happens below, not just the pre-SpawnFlags credit decision.
+        -- Only look it up when credited: get_mob_name walks the entity table
+        -- (up to 2304 reads), and there is nothing to name otherwise.
+        local target_name = credited and get_mob_name(am.target_id) or nil;
+
         if callbacks.on_debug then
-            callbacks.on_debug('death msg=%d actor=%d target=%d target_index=%d credited=%s',
-                am.message_id, am.actor_id, am.target_id, am.target_index, tostring(credited));
+            callbacks.on_debug('death msg=%d actor=%d target=%d target_index=%d credited=%s name=%s',
+                am.message_id, am.actor_id, am.target_id, am.target_index, tostring(credited), tostring(target_name));
         end
 
         -- The mob is dead; its entry can never help again, and leaving it would
         -- let a respawn on the same server id inherit the credit.
         packet_handler.clear_engagement(am.target_id);
 
-        if credited and callbacks.on_defeat then
-            local target_name = get_mob_name(am.target_id);
-            if target_name then
-                callbacks.on_defeat(target_name);
-            end
+        if target_name and callbacks.on_defeat then
+            callbacks.on_defeat(target_name);
         end
 
     -- Message 558: "You defeated a designated target. (Progress: ${number}/${number2})"
