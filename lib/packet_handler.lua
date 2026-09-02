@@ -53,6 +53,7 @@ local callbacks = {
     on_regime_complete = nil,
     on_regime_reset = nil,
     on_debug = nil,
+    should_record_engagements = nil,
 };
 
 -- Initialize the packet handler with callbacks
@@ -63,6 +64,8 @@ local callbacks = {
 --     on_regime_complete() - Called when regime is completed
 --     on_regime_reset() - Called when regime resets
 --     on_debug(fmt, ...) - Called with a death-message trace line
+--     should_record_engagements() - Optional predicate; when it returns false,
+--       Action packets (0x28) are skipped entirely. Defaults to recording.
 function packet_handler.init(handlers)
     callbacks = handlers or {};
 end
@@ -438,7 +441,11 @@ function packet_handler.handle_incoming_packet(e)
 
     -- Action: who hit what, which is how a mob gets onto the engaged list
     elseif e.id == 0x28 then
-        record_engagements(e);
+        -- Every action by every player in the zone arrives here, so skip the
+        -- decode outright when nothing will ever read the list back.
+        if callbacks.should_record_engagements == nil or callbacks.should_record_engagements() then
+            record_engagements(e);
+        end
 
     -- Zone in / zone out. Server IDs are only unique within one zone instance.
     elseif e.id == 0x0A or e.id == 0x0B then

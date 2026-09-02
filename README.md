@@ -161,6 +161,8 @@ Completely unnecessary AI generated image
 - **Fixed Actor-less Kill Credit**: Self-destruct and damage-over-time deaths arrive as action message 20 ("The Bomb falls to the ground."), which names no actor the client can match against the party, so the kill was silently dropped
 - **Expanded Death Message Detection**: Added messages 20, 97 (defeated by), 113 (spell), 406 (weapon skill) and 605 (additional effect) alongside the existing 6 and 646
 - **Added Engaged-Mob List**: Built from Action packets (0x28), tracking every mob a party member or their pet has acted on; an actor-less death is credited only if the dying mob is on it
+- **Fixed AoE Multi-Kill Credit**: One area attack can kill several tracked enemies at once, each with its own progress message behind it. Deaths now queue instead of overwriting a single slot, so every kill's progress number lands on the row it belongs to instead of the last death claiming the first number and the rest being discarded
+- **Scoped Action Packet Parsing**: Action packets (0x28) are only decoded while a regime is active and you are in that regime's training area, rather than for every action by every player in every zone
 - **Engagement Expiry**: Each entry carries a 15-minute TTL, checked lazily whenever that server ID is looked up again -- a stale entry otherwise sits until the next zone change, when every entry is cleared outright since server IDs are reused
 - **Monster-Only Credit**: A death is only credited when the dying entity is actually a monster, so a party member who dies after being cured can never be counted as a kill
 - **New `/at debug` Command**: Logs every death message with its actor, target, target index, credit decision and resolved name
