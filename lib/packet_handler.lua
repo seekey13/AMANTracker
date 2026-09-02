@@ -9,12 +9,37 @@ local packet_handler = {};
 -- Message IDs from action_messages.lua
 local MESSAGE_IDS = {
     DEFEAT = 6,                    -- "${actor} defeats ${target}."
+    FALLS_NO_ACTOR = 20,           -- "${target} falls to the ground."
+    FALLS_SPELL = 113,             -- "${actor} casts ${spell}.${lb}${target} falls to the ground."
+    FALLS_WEAPONSKILL = 406,       -- "${actor} uses ${weapon_skill}.${lb}${target} falls to the ground."
     DESIGNATED_TARGET = 558,       -- "You defeated a designated target. (Progress: ${number}/${number2})"
     REGIME_COMPLETE = 559,         -- "You have successfully completed the training regime."
+    FALLS_ADDITIONAL = 605,        -- "Additional effect: ${target} falls to the ground."
     REGIME_RESET = 643,            -- "Your current training regime will begin anew!"
     FALLS_TO_GROUND = 646,         -- "${actor} uses ${ability}.${lb}${target} falls to the ground."
     PROGRESS = 698,                -- "Progress: ${number}/${number2}."
 };
+
+-- Every message that announces a monster's death. Only 6, 113, 406 and 646 name
+-- an actor; 20 (self-destruct, damage-over-time) and 605 (additional effect) do
+-- not, which is why the engaged list below exists.
+local DEATH_MESSAGE_IDS = {
+    [MESSAGE_IDS.DEFEAT] = true,
+    [MESSAGE_IDS.FALLS_NO_ACTOR] = true,
+    [MESSAGE_IDS.FALLS_SPELL] = true,
+    [MESSAGE_IDS.FALLS_WEAPONSKILL] = true,
+    [MESSAGE_IDS.FALLS_ADDITIONAL] = true,
+    [MESSAGE_IDS.FALLS_TO_GROUND] = true,
+};
+
+-- Mobs the party (or a party member's pet) has acted on, keyed by server id and
+-- valued with the os.time() of the last action. A death message with no usable
+-- actor is credited to us only if the dying mob is in here.
+local engaged = {};
+
+-- Seconds an engagement stays usable. Server ids are reused as mobs respawn, so
+-- an entry that has sat untouched for this long is not trusted.
+local ENGAGED_TTL = 900;
 
 -- Callbacks for packet events
 local callbacks = {
@@ -78,17 +103,6 @@ local function get_entity_name(server_id)
     end
     
     return nil;
-end
-
--- Get player server ID
--- Returns:
---   number - Player's server ID or 0
-local function get_player_id()
-    local party = AshitaCore:GetMemoryManager():GetParty();
-    if party then
-        return party:GetMemberServerId(0);
-    end
-    return 0;
 end
 
 -- Check if an actor is in the player's party or is a pet/trust belonging to a party member
@@ -160,56 +174,97 @@ end
 -- Args:
 --   am (table) - Parsed action message data
 local function handle_action_message(am)
-    local player_id = get_player_id();
-    
-    -- Message 6: "${actor} defeats ${target}."
-    -- Used to capture the enemy name when player defeats an enemy
-    if am.message_id == MESSAGE_IDS.DEFEAT then
-        -- Only process if actor is in the party (filter out non-party members)
-        if is_in_party(am.actor_id) and callbacks.on_defeat then
+    -- A monster died. Messages 6/113/406/646 name the actor, so a party actor
+    -- credits the kill outright. Messages 20 (self-destruct, damage-over-time)
+    -- and 605 (additional effect) name no usable actor, so the dying mob has to
+    -- be one the party was already acting on.
+    --
+    -- Nothing here counts a kill: message 558 below carries the server's own
+    -- absolute progress number. All this does is resolve the dead mob's name so
+    -- 558 knows which tracked enemy to write that number into.
+    if DEATH_MESSAGE_IDS[am.message_id] then
+        local credited = is_in_party(am.actor_id) or packet_handler.is_engaged(am.target_id);
+
+        if callbacks.on_debug then
+            callbacks.on_debug('death msg=%d actor=%d target=%d credited=%s',
+                am.message_id, am.actor_id, am.target_id, tostring(credited));
+        end
+
+        -- The mob is dead; its entry can never help again, and leaving it would
+        -- let a respawn on the same server id inherit the credit.
+        packet_handler.clear_engagement(am.target_id);
+
+        if credited and callbacks.on_defeat then
             local target_name = get_entity_name(am.target_id);
             if target_name then
                 callbacks.on_defeat(target_name);
             end
         end
-    
+
     -- Message 558: "You defeated a designated target. (Progress: ${number}/${number2})"
     -- This message only provides progress numbers, not enemy identity
     elseif am.message_id == MESSAGE_IDS.DESIGNATED_TARGET then
-        -- Message 558 doesn't contain enemy ID, only progress information
-        -- The enemy name comes from message 6 which fires first
+        -- Message 558 doesn't contain enemy ID, only progress information.
+        -- The enemy name comes from the death message, which fires first.
         if callbacks.on_progress then
             local current = am.param_1;
             local total = am.param_2;
             callbacks.on_progress(current, total);
         end
-    
+
     -- Message 559: "You have successfully completed the training regime."
     elseif am.message_id == MESSAGE_IDS.REGIME_COMPLETE then
         if callbacks.on_regime_complete then
             callbacks.on_regime_complete();
         end
-    
+
     -- Message 643: "Your current training regime will begin anew!"
     elseif am.message_id == MESSAGE_IDS.REGIME_RESET then
         if callbacks.on_regime_reset then
             callbacks.on_regime_reset();
         end
-    
-    -- Message 646: "${actor} uses ${ability}.${lb}${target} falls to the ground."
-    -- Alternative defeat message for abilities/weapon skills
-    elseif am.message_id == MESSAGE_IDS.FALLS_TO_GROUND then
-        -- Only process if actor is in the party (filter out non-party members)
-        if is_in_party(am.actor_id) and callbacks.on_defeat then
-            local target_name = get_entity_name(am.target_id);
-            if target_name then
-                callbacks.on_defeat(target_name);
-            end
-        end
     end
-    
+
     -- NOTE: Message 698 ("Progress: X/Y") is NOT processed because it's used
     -- by both AMAN and Records of Eminence. Message 558 is AMAN-specific.
+end
+
+-- Mark a mob as one the party has acted on
+-- Args:
+--   server_id (number) - Mob's server ID
+--   now (number) - Optional timestamp; defaults to os.time()
+function packet_handler.record_engagement(server_id, now)
+    engaged[server_id] = now or os.time();
+end
+
+-- Check whether a mob is one the party has acted on recently
+-- Args:
+--   server_id (number) - Mob's server ID
+--   now (number) - Optional timestamp; defaults to os.time()
+-- Returns:
+--   boolean - True if engaged within ENGAGED_TTL seconds
+function packet_handler.is_engaged(server_id, now)
+    local seen = engaged[server_id];
+    if not seen then
+        return false;
+    end
+    if ((now or os.time()) - seen) > ENGAGED_TTL then
+        engaged[server_id] = nil;
+        return false;
+    end
+    return true;
+end
+
+-- Forget every engagement. Server IDs are only unique within one zone instance.
+function packet_handler.clear_engagements()
+    engaged = {};
+end
+
+-- Forget one mob's engagement
+-- Args:
+--   server_id (number) - Mob's server ID
+function packet_handler.clear_engagement(server_id)
+    engaged[server_id] = nil;
 end
 
 -- Handle incoming packet
