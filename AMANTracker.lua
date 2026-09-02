@@ -9,7 +9,7 @@ This addon is designed for Ashita v4.
 
 addon.name      = 'AMANTracker';
 addon.author    = 'Seekey';
-addon.version   = '2.6';
+addon.version   = '2.7';
 addon.desc      = 'GUI Tracker for Adventurers Mutual Aid Network Training Regimes';
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
@@ -55,13 +55,14 @@ local MESSAGES = {
     DATA_CLEARED = "Training data cleared and saved.",
 };
 
--- Persistent data field schema (fields that are saved to disk)
+-- Persistent hunt fields (synced both ways between training_data and saved_data).
+-- ui_mode is deliberately not here: it lives only on saved_data, so syncing back
+-- from training_data can't blank it out.
 local PERSISTENT_FIELDS = {
     'is_active',
     'enemies',
     'target_level_range',
     'training_area_zone',
-    'ui_mode',
 };
 
 -- Default settings (structure for persistent data)
@@ -95,23 +96,28 @@ local function sync_persistent_data(source, target)
     end
 end
 
--- Restore saved hunt data if it exists
-if saved_data.is_active then
+-- Push saved_data into the live tracker and the UI.
+--
+-- This runs twice: once now, and again from the settings callback on login.
+-- Ashita's settings library resolves its path from the logged-in character, so
+-- an addon loaded while the game is still booting reads the 'defaults' profile,
+-- not the player's file. The character's real settings only arrive with the
+-- 0x000A zone-in packet, which raises the settings event.
+local function apply_saved_data()
     sync_persistent_data(saved_data, training_data);
-    
-    -- Print restoration message
-    if #training_data.enemies > 0 then
+    tracker_ui.set_ui_mode(saved_data.ui_mode or 'gdifonts');
+
+    if training_data.is_active and #training_data.enemies > 0 then
         printf(MESSAGES.RESTORED_HUNT);
+        tracker_ui.open();
+    else
+        tracker_ui.close();
     end
 end
 
 -- Initialize the UI with training data reference
 tracker_ui.init(training_data, saved_data.ui_mode or 'gdifonts');
-
--- Auto-open UI if there's active training data
-if training_data.is_active and #training_data.enemies > 0 then
-    tracker_ui.open();
-end
+apply_saved_data();
 
 -- Helper function to save current hunt data
 local function save_training_data()
@@ -119,15 +125,12 @@ local function save_training_data()
     settings.save();
 end
 
--- Register settings callback for external changes
+-- Register settings callback. Raised on login/logout (character switch), which is
+-- when the addon first sees the player's actual settings.
 settings.register('settings', 'settings_update', function(s)
     if s ~= nil then
         saved_data = s;
-        -- Restore to training_data if different
-        if s.is_active ~= training_data.is_active or 
-           s.target_level_range ~= training_data.target_level_range then
-            sync_persistent_data(s, training_data);
-        end
+        apply_saved_data();
     end
 end);
 
