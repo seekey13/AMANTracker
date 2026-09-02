@@ -758,7 +758,7 @@ Then add this section directly above it, under the `## Changelog` heading on lin
 
 - [ ] **Step 6: Verify the addon still parses**
 
-Run: `lua -e "loadfile('AMANTracker.lua') and print('AMANTracker.lua parses') or error('syntax error')" && lua -e "loadfile('lib/packet_handler.lua') and print('packet_handler.lua parses') or error('syntax error')"`
+Run: `lua -e "if loadfile('AMANTracker.lua') then print('AMANTracker.lua parses') else error('syntax error') end" && lua -e "if loadfile('lib/packet_handler.lua') then print('packet_handler.lua parses') else error('syntax error') end"`
 Expected:
 ```
 AMANTracker.lua parses
