@@ -87,8 +87,8 @@ end
 
 -- Get a monster's name by server ID. Refuses to name a non-monster (a party
 -- member, an NPC) even if its server ID is the one asked for -- SpawnFlags bit
--- 0x10 is the client's own monster flag (PCs carry 0x02 instead), read
--- arithmetically since this file has no `bit` library available.
+-- 0x10 is the client's own monster flag (PCs carry 0x02 instead), the same test
+-- geocompass, HXUI and mobdb use.
 -- Args:
 --   server_id (number) - Entity server ID
 -- Returns:
@@ -103,7 +103,7 @@ local function get_mob_name(server_id)
     for i = 0, 2303 do
         local entity = entity_mgr:GetRawEntity(i);
         if entity and entity.ServerId == server_id then
-            if (entity.SpawnFlags // 0x10) % 2 == 1 then
+            if bit.band(entity.SpawnFlags, 0x10) ~= 0 then
                 return entity.Name;
             end
             return nil;

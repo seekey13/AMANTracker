@@ -72,6 +72,23 @@ _G.AshitaCore = {
 
 _G.ashita = { bits = { unpack_be = function () return 0; end } };
 
+-- Ashita runs LuaJIT (Lua 5.1), which ships the `bit` library the addon uses.
+-- Standalone Lua 5.4 does not, so stand in the one function packet_handler calls.
+_G.bit = {
+    band = function (a, b)
+        local result, shift = 0, 1;
+        while a > 0 and b > 0 do
+            if (a % 2 == 1) and (b % 2 == 1) then
+                result = result + shift;
+            end
+            a = (a - a % 2) / 2;
+            b = (b - b % 2) / 2;
+            shift = shift * 2;
+        end
+        return result;
+    end,
+};
+
 local packet_handler = dofile('lib/packet_handler.lua');
 
 local defeats = {};

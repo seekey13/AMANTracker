@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Lua 5.4 (`lua -v` → `Lua 5.4.6`). Integer division `//` and integer `%` are available.
+- **Ashita v4 runs LuaJIT (Lua 5.1).** Do NOT use `//`, `&`, `|`, `<<`, `>>`, `goto`, or `table.unpack` in anything the addon loads at runtime -- they are 5.2/5.3+ syntax and fail to parse. Use the `bit` library (`bit.band`, `bit.bor`) for bitwise work, as every other addon in this client does. The standalone tests run under the local `lua` (5.4.6), which is more permissive, so a test passing locally does NOT prove the addon loads -- stub `bit` in the test rather than writing 5.4-only arithmetic in the module.
 - Ashita v4 addon. No external libraries, no luarocks, no test framework.
 - Existing code style: 4-space indent, semicolon-terminated statements, `local function` for file-private helpers, block comments (`--[[ ]]`) at file head, `-- Args:` / `-- Returns:` comment blocks on public functions.
 - Deliberate simplifications are marked with a `ponytail:` comment naming the ceiling and the upgrade path.
