@@ -9,6 +9,7 @@ local packet_handler = {};
 -- Message IDs from action_messages.lua
 local MESSAGE_IDS = {
     DEFEAT = 6,                    -- "${actor} defeats ${target}."
+    DEFEATED_BY = 97,              -- "${target} was defeated by ${actor}."
     FALLS_NO_ACTOR = 20,           -- "${target} falls to the ground."
     FALLS_SPELL = 113,             -- "${actor} casts ${spell}.${lb}${target} falls to the ground."
     FALLS_WEAPONSKILL = 406,       -- "${actor} uses ${weapon_skill}.${lb}${target} falls to the ground."
@@ -20,11 +21,15 @@ local MESSAGE_IDS = {
     PROGRESS = 698,                -- "Progress: ${number}/${number2}."
 };
 
--- Every message that announces a monster's death. Only 6, 113, 406 and 646 name
--- an actor; 20 (self-destruct, damage-over-time) and 605 (additional effect) do
--- not, which is why the engaged list below exists.
+-- Every message that announces a monster's death. 6, 97, 113, 406 and 646 name
+-- an actor the client can match against the party; 20 (self-destruct,
+-- damage-over-time) and 605 (additional effect) do not, which is why the
+-- engaged list below exists. The engaged list is consulted for every message in
+-- this set, not only the actor-less two -- it is a cheap hash lookup that also
+-- short-circuits the expensive party walk on our own kills.
 local DEATH_MESSAGE_IDS = {
     [MESSAGE_IDS.DEFEAT] = true,
+    [MESSAGE_IDS.DEFEATED_BY] = true,
     [MESSAGE_IDS.FALLS_NO_ACTOR] = true,
     [MESSAGE_IDS.FALLS_SPELL] = true,
     [MESSAGE_IDS.FALLS_WEAPONSKILL] = true,
@@ -76,7 +81,7 @@ local function parse_action_message(data)
     am.actor_id = struct.unpack('I', data, 0x05);
     am.target_id = struct.unpack('I', data, 0x09);
     am.param_1 = struct.unpack('I', data, 0x0D);
-    am.param_2 = struct.unpack('H', data, 0x11) % (2^9); -- First 7 bits
+    am.param_2 = struct.unpack('H', data, 0x11) % (2^9); -- Low 9 bits
     am.param_3 = math.floor(struct.unpack('I', data, 0x11) / (2^5)); -- Rest
     am.actor_index = struct.unpack('H', data, 0x15);
     am.target_index = struct.unpack('H', data, 0x17);
@@ -182,20 +187,20 @@ end
 -- Args:
 --   am (table) - Parsed action message data
 local function handle_action_message(am)
-    -- A monster died. Messages 6/113/406/646 name the actor, so a party actor
-    -- credits the kill outright. Messages 20 (self-destruct, damage-over-time)
-    -- and 605 (additional effect) name no usable actor, so the dying mob has to
-    -- be one the party was already acting on.
+    -- A monster died. Messages 6/97/113/406/646 name the actor, so a party
+    -- actor credits the kill outright. Messages 20 (self-destruct,
+    -- damage-over-time) and 605 (additional effect) name no usable actor, so the
+    -- dying mob has to be one the party was already acting on.
     --
     -- Nothing here counts a kill: message 558 below carries the server's own
     -- absolute progress number. All this does is resolve the dead mob's name so
     -- 558 knows which tracked enemy to write that number into.
     if DEATH_MESSAGE_IDS[am.message_id] then
         -- is_engaged is an O(1) hash lookup; is_in_party walks the entity table
-        -- (thousands of native reads across party slots, pets and trusts).
-        -- Messages 20 and 605 never name a party actor, so is_in_party's work
-        -- would be guaranteed wasted for them -- checking is_engaged first
-        -- means it never runs unless it might actually be needed.
+        -- (thousands of native reads across party slots, pets and trusts), so it
+        -- goes second. The engaged list is not restricted to the actor-less
+        -- messages: an actor-named kill on a mob we engaged is ours either way,
+        -- and the lookup short-circuits the walk.
         local credited = packet_handler.is_engaged(am.target_id) or is_in_party(am.actor_id);
 
         -- Resolve the name before logging so the debug line reflects what
@@ -256,15 +261,14 @@ end
 -- Check whether a mob is one the party has acted on recently
 -- Args:
 --   server_id (number) - Mob's server ID
---   now (number) - Optional timestamp; defaults to os.time()
 -- Returns:
 --   boolean - True if engaged within ENGAGED_TTL seconds
-function packet_handler.is_engaged(server_id, now)
+function packet_handler.is_engaged(server_id)
     local seen = engaged[server_id];
     if not seen then
         return false;
     end
-    if ((now or os.time()) - seen) > ENGAGED_TTL then
+    if (os.time() - seen) > ENGAGED_TTL then
         engaged[server_id] = nil;
         return false;
     end
@@ -283,42 +287,54 @@ function packet_handler.clear_engagement(server_id)
     engaged[server_id] = nil;
 end
 
--- Every server ID that counts as "ours" for engagement purposes: the six party
+-- Whether a server ID counts as "ours" for engagement purposes: the six party
 -- slots plus each member's pet/avatar/automaton, which has no party slot of its
 -- own. Reached through each slot's target index, so this costs a dozen memory
--- reads rather than a walk of the entity table.
+-- reads rather than a walk of the entity table, and returns as soon as it
+-- matches.
 --
 -- Trusts are deliberately not included: a trust only ever acts against something
 -- a party member is already acting against, so the party member's own action
 -- already covers whatever the trust would have added.
 --
+-- Args:
+--   actor_id (number) - Server ID from an Action packet
 -- Returns:
---   table - Set of server IDs, keyed by ID, valued true
-local function party_actor_ids()
+--   boolean - True if the actor is a party member or a party member's pet
+local function is_party_actor(actor_id)
+    -- A malformed packet reads an actor id of 0, which must never match a
+    -- vacated party or pet slot that also holds 0.
+    if actor_id == 0 then
+        return false;
+    end
+
     local party = AshitaCore:GetMemoryManager():GetParty();
     local entity_mgr = AshitaCore:GetMemoryManager():GetEntity();
-    local ids = {};
     if not party or not entity_mgr then
-        return ids;
+        return false;
     end
 
     for i = 0, 5 do
         local member_id = party:GetMemberServerId(i);
         if member_id ~= 0 and party:GetMemberIsActive(i) == 1 then
-            ids[member_id] = true;
+            if member_id == actor_id then
+                return true;
+            end
 
             local member_index = party:GetMemberTargetIndex(i);
             local member = member_index ~= 0 and entity_mgr:GetRawEntity(member_index) or nil;
             if member and member.PetTargetIndex > 0 then
                 local pet = entity_mgr:GetRawEntity(member.PetTargetIndex);
-                if pet then
-                    ids[pet.ServerId] = true;
+                -- A vacated pet slot can resolve to an entity with a zero or
+                -- absent server ID; the actor_id == 0 guard above covers both.
+                if pet and pet.ServerId == actor_id then
+                    return true;
                 end
             end
         end
     end
 
-    return ids;
+    return false;
 end
 
 -- Minimal decode of an Action packet (0x28): who acted, and which server IDs
@@ -333,10 +349,9 @@ end
 --
 -- Args:
 --   e (table) - Packet event data (needs e.data_raw and e.size)
---   mine (table) - Set of server IDs that count as ours
 -- Returns:
 --   table - Array of target server IDs, empty when the actor is not ours
-local function parse_action(e, mine)
+local function parse_action(e)
     local bit_offset = 40; -- header
     local max_bits = e.size * 8;
 
@@ -351,7 +366,7 @@ local function parse_action(e, mine)
     end
 
     local actor_id = bits(32);
-    if not mine[actor_id] then
+    if not is_party_actor(actor_id) then
         return {};
     end
 
@@ -399,7 +414,7 @@ local function record_engagements(e)
     -- refuses to name anything this set holds that isn't actually a monster.
     -- Add the flag check here too if the set ever grows enough to matter for
     -- its own sake (e.g. size, or another reader that trusts it directly).
-    local targets = parse_action(e, party_actor_ids());
+    local targets = parse_action(e);
     if #targets == 0 then
         return;
     end

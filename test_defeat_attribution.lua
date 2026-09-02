@@ -13,12 +13,15 @@ Run: lua test_defeat_attribution.lua
 -- ponytail: hand-rolled stubs, no framework. Enough to load lib/packet_handler.lua.
 
 -- Little-endian byte packing, matching Ashita's struct.unpack offsets (1-based).
+-- math.floor rather than // so this file also parses under LuaJIT (Lua 5.1),
+-- which is what the addon actually runs on.
 local function u16(v)
-    return string.char(v % 256, (v // 256) % 256);
+    return string.char(v % 256, math.floor(v / 256) % 256);
 end
 
 local function u32(v)
-    return string.char(v % 256, (v // 256) % 256, (v // 65536) % 256, (v // 16777216) % 256);
+    return string.char(v % 256, math.floor(v / 256) % 256,
+        math.floor(v / 65536) % 256, math.floor(v / 16777216) % 256);
 end
 
 -- Build a 0x29 action message packet body the way parse_action_message reads it.
@@ -134,8 +137,9 @@ packet_handler.handle_incoming_packet({
 });
 assert_eq(#defeats, 0, 'unengaged self-destruct ignored');
 
--- Message 605 (Additional effect) and 406 (weapon skill) are death messages too.
-for _, id in ipairs({ 113, 406, 605 }) do
+-- 97 (defeated by), 113 (spell), 406 (weapon skill) and 605 (additional effect)
+-- are death messages too.
+for _, id in ipairs({ 97, 113, 406, 605 }) do
     set_world({
         party_ids = { [0] = 0x01000001 },
         entities = { [17] = { ServerId = 0x02000123, Name = 'Bomb', PetTargetIndex = 0, SpawnFlags = 0x10 } },
@@ -292,6 +296,19 @@ script_bits(melee_round(0x0100BEEF, 0x02000123));
 packet_handler.handle_incoming_packet({ id = 0x28, data_raw = '', size = 256 });
 assert_eq(packet_handler.is_engaged(0x02000123), false, 'stranger action ignored');
 assert_eq(bit_reads, 1, 'stranger action bails after the actor id');
+
+-- A packet too short to hold the fields parse_action reads must engage
+-- nothing: bits() poisons max_bits and the target loop bails.
+set_world({ party_ids = { [0] = 0x01000001 }, party_indexes = { [0] = 1 } });
+script_bits(melee_round(0x01000001, 0x02000123));
+-- 20 bytes is enough for the actor id and the header fields (150 bits) but
+-- not the first target id (needs 182), so the read that fails is the one
+-- inside the target loop.
+packet_handler.handle_incoming_packet({ id = 0x28, data_raw = '', size = 20 });
+assert_eq(packet_handler.is_engaged(0x02000123), false, 'truncated action engages nothing');
+-- 6 successful reads (actor, count, reserved, type, param, recast); the 7th,
+-- the target id, fails the bounds check and never reaches unpack_be.
+assert_eq(bit_reads, 6, 'truncated action fails on the target id, not the actor id');
 
 -- Zoning invalidates every server id.
 set_world({ party_ids = { [0] = 0x01000001 }, party_indexes = { [0] = 1 } });

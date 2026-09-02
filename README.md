@@ -66,8 +66,8 @@ Or the typical ImGui
 The addon uses a dual-layer approach for maximum reliability:
 
 **Packet-Based Detection** (Primary):
-- **Enemy Defeats** - Intercepts action message packet 0x29 (death message IDs 6, 20, 113, 406, 605, 646); deaths with no usable actor (20, 605) are credited only if the dying mob is on an engaged-mob list built from Action packets (0x28), which is cleared on zone change (packets 0x0A/0x0B)
-- **Progress Updates** - Reads progress directly from packets (message IDs 558, 698)
+- **Enemy Defeats** - Intercepts action message packet 0x29 (death message IDs 6, 20, 97, 113, 406, 605, 646). A kill counts if the message names a party actor, or if the dying mob is on an engaged-mob list built from Action packets (0x28) -- which is what credits deaths carrying no usable actor (20, 605). The list is cleared on zone change (packets 0x0A/0x0B)
+- **Progress Updates** - Reads progress directly from packets (message ID 558; 698 is deliberately ignored because Records of Eminence shares it)
 - **Regime Resets** - Detects "begin anew" via packet (message ID 643)
 - **Regime Completion** - Monitors completion messages (message ID 559)
 
@@ -159,7 +159,7 @@ Completely unnecessary AI generated image
 ## Changelog
 ### Version 2.7 (Current)
 - **Fixed Actor-less Kill Credit**: Self-destruct and damage-over-time deaths arrive as action message 20 ("The Bomb falls to the ground."), which names no actor the client can match against the party, so the kill was silently dropped
-- **Expanded Death Message Detection**: Added messages 20, 113 (spell), 406 (weapon skill) and 605 (additional effect) alongside the existing 6 and 646
+- **Expanded Death Message Detection**: Added messages 20, 97 (defeated by), 113 (spell), 406 (weapon skill) and 605 (additional effect) alongside the existing 6 and 646
 - **Added Engaged-Mob List**: Built from Action packets (0x28), tracking every mob a party member or their pet has acted on; an actor-less death is credited only if the dying mob is on it
 - **Engagement Expiry**: Each entry carries a 15-minute TTL, checked lazily whenever that server ID is looked up again -- a stale entry otherwise sits until the next zone change, when every entry is cleared outright since server IDs are reused
 - **Monster-Only Credit**: A death is only credited when the dying entity is actually a monster, so a party member who dies after being cured can never be counted as a kill
@@ -229,7 +229,7 @@ Completely unnecessary AI generated image
 - **Major Update: Hybrid Packet/Text Detection System**
 - Added packet handler module for reliable event detection
 - Intercepts action message packets (0x29) for enemy defeats and progress
-- Packet-based tracking for defeats (message IDs 6, 20, 113, 406, 605, 646); actor-less deaths (20, 605) credited via an engaged-mob list built from Action packets (0x28), cleared on zone change (0x0A/0x0B)
+- Packet-based tracking for defeats (message IDs 6, 646)
 - Packet-based progress updates (message ID 558 for AMAN-specific tracking)
 - Packet-based regime reset detection (message ID 643)
 - Packet-based regime completion detection (message ID 559)
