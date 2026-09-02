@@ -57,6 +57,7 @@ Or the typical ImGui
 - `/at ui gdifonts` - Switch to transparent floating text mode (default)
 - `/at ui imgui` - Switch to classic solid window mode
 - `/at clear` - Clear current training data and reset tracker
+- `/at debug` - Toggle death-packet logging (prints actor, target and credit decision)
 
 
 ## How It Works
@@ -156,7 +157,16 @@ Completely unnecessary AI generated image
 
 
 ## Changelog
-### Version 2.7 (Current)
+### Version 2.8 (Current)
+- **Fixed: kills that announce no actor were not counted**
+- Self-destruct and damage-over-time deaths arrive as action message 20 ("The Bomb falls to the ground."), which names no actor the client can match against the party, so the kill was silently dropped
+- Added death messages 20, 113 (spell), 406 (weapon skill) and 605 (additional effect) alongside the existing 6 and 646
+- Added an engaged-mob list, built from Action packets (0x28), of every mob a party member or their pet has acted on; an actor-less death is credited only if the dying mob is on it
+- Engagements expire after 15 minutes and clear on zone change, since server IDs are reused
+- Added `/at debug` to log every death message with its actor, target and credit decision
+- Removed the unused `get_player_id` helper
+
+### Version 2.7
 - **Fixed Startup Display**: The tracker no longer stays hidden when the addon loads while the game is still booting. Ashita only hands an addon the character's saved settings once you log in, so the saved regime, UI mode, and window visibility are now restored on that login event instead of only at load. `/at ui` is no longer needed after every launch.
 - **Fixed UI Mode Reset**: `ui_mode` is no longer overwritten when hunt progress is saved, so `/at ui imgui` sticks across sessions.
 

@@ -9,7 +9,7 @@ This addon is designed for Ashita v4.
 
 addon.name      = 'AMANTracker';
 addon.author    = 'Seekey';
-addon.version   = '2.7';
+addon.version   = '2.8';
 addon.desc      = 'GUI Tracker for Adventurers Mutual Aid Network Training Regimes';
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
@@ -85,6 +85,12 @@ local training_data = {
     last_defeated_enemy = nil,  -- Track last defeated enemy name for progress matching
     last_packet_progress = nil,  -- Track last progress from packet to avoid duplicate text processing
 };
+
+-- Prints every death message the packet handler sees, with the actor and target
+-- IDs and whether the kill was credited. Off by default, toggled by /at debug.
+-- The only way to confirm on a live server which message ID a Self-Destruct or a
+-- damage-over-time death actually arrives as.
+local debug_enabled = false;
 
 -- Load saved settings
 local saved_data = settings.load(default_settings);
@@ -390,6 +396,11 @@ packet_handler.init({
             handle_regime_reset();
         end
     end,
+    on_debug = function(fmt, ...)
+        if debug_enabled then
+            printf(fmt, ...);
+        end
+    end,
 });
 
 -- Event: Incoming text (chat messages)
@@ -454,6 +465,7 @@ ashita.events.register('command', 'command_cb', function (e)
         printf('  /at ui gdifonts - Switch to transparent floating text (default)');
         printf('  /at ui imgui    - Switch to classic solid window');
         printf('  /at clear       - Clear current training data');
+        printf('  /at debug       - Toggle death-packet logging');
         printf('  /at test <name> - Test enemy name matching (debug)');
     elseif args[2] == 'ui' then
         if args[3] ~= nil and args[3] ~= '' then
@@ -476,6 +488,9 @@ ashita.events.register('command', 'command_cb', function (e)
     elseif args[2] == 'clear' then
         clear_training_data();
         printf(MESSAGES.DATA_CLEARED);
+    elseif args[2] == 'debug' then
+        debug_enabled = not debug_enabled;
+        printf('Death packet logging %s', debug_enabled and 'enabled' or 'disabled');
     elseif args[2] == 'test' then
         -- Test command: /at test <enemy_name>
         if #args < 3 then
