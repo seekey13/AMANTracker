@@ -57,6 +57,7 @@ Or the typical ImGui
 - `/at ui gdifonts` - Switch to transparent floating text mode (default)
 - `/at ui imgui` - Switch to classic solid window mode
 - `/at clear` - Clear current training data and reset tracker
+- `/at debug` - Toggle death-packet logging (prints message id, actor, target, target index, credit decision and resolved name)
 
 
 ## How It Works
@@ -65,8 +66,8 @@ Or the typical ImGui
 The addon uses a dual-layer approach for maximum reliability:
 
 **Packet-Based Detection** (Primary):
-- **Enemy Defeats** - Intercepts action message packet 0x29 (message IDs 6, 646)
-- **Progress Updates** - Reads progress directly from packets (message IDs 558, 698)
+- **Enemy Defeats** - Intercepts action message packet 0x29 (death message IDs 6, 20, 97, 113, 406, 605, 646). A kill counts if the message names a party actor, or if the dying mob is on an engaged-mob list built from Action packets (0x28) -- which is what credits deaths carrying no usable actor (20, 605). The list is cleared on zone change (packets 0x0A/0x0B)
+- **Progress Updates** - Reads progress directly from packets (message ID 558; 698 is deliberately ignored because Records of Eminence shares it)
 - **Regime Resets** - Detects "begin anew" via packet (message ID 643)
 - **Regime Completion** - Monitors completion messages (message ID 559)
 
@@ -157,6 +158,15 @@ Completely unnecessary AI generated image
 
 ## Changelog
 ### Version 2.7 (Current)
+- **Fixed Actor-less Kill Credit**: Self-destruct and damage-over-time deaths arrive as action message 20 ("The Bomb falls to the ground."), which names no actor the client can match against the party, so the kill was silently dropped
+- **Expanded Death Message Detection**: Added messages 20, 97 (defeated by), 113 (spell), 406 (weapon skill) and 605 (additional effect) alongside the existing 6 and 646
+- **Added Engaged-Mob List**: Built from Action packets (0x28), tracking every mob a party member or their pet has acted on; an actor-less death is credited only if the dying mob is on it
+- **Fixed AoE Multi-Kill Credit**: One area attack can kill several tracked enemies at once, each with its own progress message behind it. Deaths now queue instead of overwriting a single slot, so every kill's progress number lands on the row it belongs to instead of the last death claiming the first number and the rest being discarded
+- **Scoped Action Packet Parsing**: Action packets (0x28) are only decoded while a regime is active and you are in that regime's training area, rather than for every action by every player in every zone
+- **Engagement Expiry**: Each entry carries a 15-minute TTL, checked lazily whenever that server ID is looked up again -- a stale entry otherwise sits until the next zone change, when every entry is cleared outright since server IDs are reused
+- **Monster-Only Credit**: A death is only credited when the dying entity is actually a monster, so a party member who dies after being cured can never be counted as a kill
+- **New `/at debug` Command**: Logs every death message with its actor, target, target index, credit decision and resolved name
+- **Removed Dead Code**: Dropped the unused `get_player_id` helper
 - **Fixed Startup Display**: The tracker no longer stays hidden when the addon loads while the game is still booting. Ashita only hands an addon the character's saved settings once you log in, so the saved regime, UI mode, and window visibility are now restored on that login event instead of only at load. `/at ui` is no longer needed after every launch.
 - **Fixed UI Mode Reset**: `ui_mode` is no longer overwritten when hunt progress is saved, so `/at ui imgui` sticks across sessions.
 

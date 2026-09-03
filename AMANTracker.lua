@@ -82,9 +82,21 @@ local training_data = {
     target_level_range = nil,
     training_area_zone = nil,
     raw_enemy_lines = {},  -- Debug: capture all raw lines between markers
-    last_defeated_enemy = nil,  -- Track last defeated enemy name for progress matching
+    pending_defeats = {},  -- FIFO of {name, at} deaths awaiting their message 558; not persisted
     last_packet_progress = nil,  -- Track last progress from packet to avoid duplicate text processing
 };
+
+-- Seconds a queued defeat stays usable. A death message with no 558 behind it (a
+-- stranger finishing a mob we merely touched) would otherwise sit in the queue
+-- until some later 558 wrote that unrelated number into it. A 558 follows its
+-- death message in the same packet burst, so this is generous.
+local PENDING_DEFEAT_TTL = 3;
+
+-- Prints every death message the packet handler sees, with the actor and target
+-- IDs and whether the kill was credited. Off by default, toggled by /at debug.
+-- The only way to confirm on a live server which message ID a Self-Destruct or a
+-- damage-over-time death actually arrives as.
+local debug_enabled = false;
 
 -- Load saved settings
 local saved_data = settings.load(default_settings);
@@ -142,8 +154,8 @@ local function clear_training_data()
     training_data.target_level_range = nil;
     training_data.training_area_zone = nil;
     training_data.raw_enemy_lines = {};
-    training_data.last_defeated_enemy = nil;
-    
+    training_data.pending_defeats = {};
+
     -- Save the cleared state
     save_training_data();
 end
@@ -248,6 +260,31 @@ local function is_training_valid()
     return training_data and training_data.is_active;
 end
 
+-- Whether the engaged-mob list is worth maintaining right now. It is only ever
+-- read while a regime is running, and a regime's kills only count in its own
+-- training area, so 0x28 parsing is skipped everywhere else.
+--
+-- Records when the zone cannot be resolved, or when the regime's area was never
+-- parsed: a missed engagement silently drops an actor-less kill, which is worse
+-- than parsing a few packets that turn out not to matter.
+local function in_training_area()
+    if not is_training_valid() then
+        return false;
+    end
+    if not training_data.training_area_zone then
+        return true;
+    end
+
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    local resources = AshitaCore:GetResourceManager();
+    if not party or not resources then
+        return true;
+    end
+
+    local zone_name = resources:GetString('zones.names', party:GetMemberZone(0));
+    return zone_name == nil or zone_name == training_data.training_area_zone;
+end
+
 -- Message handler functions
 local function handle_tome_interaction()
     training_data.is_active = true;
@@ -319,29 +356,48 @@ local function handle_regime_reset()
     for i, enemy in ipairs(training_data.enemies) do
         enemy.killed = 0;
     end
+    -- Counts just went back to zero, so a death queued before the reset would
+    -- write a stale absolute number into a row that no longer matches it.
+    training_data.pending_defeats = {};
     training_data.last_packet_progress = nil;
     save_training_data();
 end
 
+-- Drop queued deaths that never got a 558 of their own: the kill was somebody
+-- else's, and letting one linger would hand its name to an unrelated 558.
+local function prune_pending_defeats(now)
+    local pending = training_data.pending_defeats;
+    while pending[1] and (now - pending[1].at) > PENDING_DEFEAT_TTL do
+        table.remove(pending, 1);
+    end
+end
+
+-- One AoE can kill several tracked enemies at once, and each death arrives as
+-- its own message with its own 558 behind it. A single slot would let the last
+-- death overwrite the earlier ones and drop their progress numbers, so deaths
+-- queue up and each 558 claims the oldest still-fresh one.
 local function handle_enemy_defeat(target_name)
     if target_name then
-        local enemy, index = find_enemy_by_name(target_name);
+        local enemy = find_enemy_by_name(target_name);
         if enemy then
-            training_data.last_defeated_enemy = target_name;
+            local now = os.time();
+            prune_pending_defeats(now);
+            table.insert(training_data.pending_defeats, { name = target_name, at = now });
         end
     end
 end
 
 local function handle_progress_update(current, total)
-    -- Find enemy and update kill count
-    if training_data.last_defeated_enemy then
-        local enemy, index = find_enemy_by_name(training_data.last_defeated_enemy);
+    prune_pending_defeats(os.time());
+
+    local defeat = table.remove(training_data.pending_defeats, 1);
+    if defeat then
+        local enemy = find_enemy_by_name(defeat.name);
         if enemy then
             enemy.killed = current;
             save_training_data();
         end
     end
-    training_data.last_defeated_enemy = nil;
 end
 
 -- Message handler dispatch table
@@ -388,6 +444,12 @@ packet_handler.init({
     on_regime_reset = function()
         if is_training_valid() then
             handle_regime_reset();
+        end
+    end,
+    should_record_engagements = in_training_area,
+    on_debug = function(fmt, ...)
+        if debug_enabled then
+            printf(fmt, ...);
         end
     end,
 });
@@ -454,6 +516,7 @@ ashita.events.register('command', 'command_cb', function (e)
         printf('  /at ui gdifonts - Switch to transparent floating text (default)');
         printf('  /at ui imgui    - Switch to classic solid window');
         printf('  /at clear       - Clear current training data');
+        printf('  /at debug       - Toggle death-packet logging');
         printf('  /at test <name> - Test enemy name matching (debug)');
     elseif args[2] == 'ui' then
         if args[3] ~= nil and args[3] ~= '' then
@@ -476,6 +539,9 @@ ashita.events.register('command', 'command_cb', function (e)
     elseif args[2] == 'clear' then
         clear_training_data();
         printf(MESSAGES.DATA_CLEARED);
+    elseif args[2] == 'debug' then
+        debug_enabled = not debug_enabled;
+        printf('Death packet logging %s', debug_enabled and 'enabled' or 'disabled');
     elseif args[2] == 'test' then
         -- Test command: /at test <enemy_name>
         if #args < 3 then

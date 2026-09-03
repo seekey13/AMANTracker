@@ -9,12 +9,42 @@ local packet_handler = {};
 -- Message IDs from action_messages.lua
 local MESSAGE_IDS = {
     DEFEAT = 6,                    -- "${actor} defeats ${target}."
+    DEFEATED_BY = 97,              -- "${target} was defeated by ${actor}."
+    FALLS_NO_ACTOR = 20,           -- "${target} falls to the ground."
+    FALLS_SPELL = 113,             -- "${actor} casts ${spell}.${lb}${target} falls to the ground."
+    FALLS_WEAPONSKILL = 406,       -- "${actor} uses ${weapon_skill}.${lb}${target} falls to the ground."
     DESIGNATED_TARGET = 558,       -- "You defeated a designated target. (Progress: ${number}/${number2})"
     REGIME_COMPLETE = 559,         -- "You have successfully completed the training regime."
+    FALLS_ADDITIONAL = 605,        -- "Additional effect: ${target} falls to the ground."
     REGIME_RESET = 643,            -- "Your current training regime will begin anew!"
     FALLS_TO_GROUND = 646,         -- "${actor} uses ${ability}.${lb}${target} falls to the ground."
     PROGRESS = 698,                -- "Progress: ${number}/${number2}."
 };
+
+-- Every message that announces a monster's death. 6, 97, 113, 406 and 646 name
+-- an actor the client can match against the party; 20 (self-destruct,
+-- damage-over-time) and 605 (additional effect) do not, which is why the
+-- engaged list below exists. The engaged list is consulted for every message in
+-- this set, not only the actor-less two -- it is a cheap hash lookup that also
+-- short-circuits the expensive party walk on our own kills.
+local DEATH_MESSAGE_IDS = {
+    [MESSAGE_IDS.DEFEAT] = true,
+    [MESSAGE_IDS.DEFEATED_BY] = true,
+    [MESSAGE_IDS.FALLS_NO_ACTOR] = true,
+    [MESSAGE_IDS.FALLS_SPELL] = true,
+    [MESSAGE_IDS.FALLS_WEAPONSKILL] = true,
+    [MESSAGE_IDS.FALLS_ADDITIONAL] = true,
+    [MESSAGE_IDS.FALLS_TO_GROUND] = true,
+};
+
+-- Mobs the party (or a party member's pet) has acted on, keyed by server id and
+-- valued with the os.time() of the last action. A death message with no usable
+-- actor is credited to us only if the dying mob is in here.
+local engaged = {};
+
+-- Seconds an engagement stays usable. Server ids are reused as mobs respawn, so
+-- an entry that has sat untouched for this long is not trusted.
+local ENGAGED_TTL = 900;
 
 -- Callbacks for packet events
 local callbacks = {
@@ -22,6 +52,8 @@ local callbacks = {
     on_progress = nil,
     on_regime_complete = nil,
     on_regime_reset = nil,
+    on_debug = nil,
+    should_record_engagements = nil,
 };
 
 -- Initialize the packet handler with callbacks
@@ -31,6 +63,9 @@ local callbacks = {
 --     on_progress(current, total) - Called when progress update is received
 --     on_regime_complete() - Called when regime is completed
 --     on_regime_reset() - Called when regime resets
+--     on_debug(fmt, ...) - Called with a death-message trace line
+--     should_record_engagements() - Optional predicate; when it returns false,
+--       Action packets (0x28) are skipped entirely. Defaults to recording.
 function packet_handler.init(handlers)
     callbacks = handlers or {};
 end
@@ -49,7 +84,7 @@ local function parse_action_message(data)
     am.actor_id = struct.unpack('I', data, 0x05);
     am.target_id = struct.unpack('I', data, 0x09);
     am.param_1 = struct.unpack('I', data, 0x0D);
-    am.param_2 = struct.unpack('H', data, 0x11) % (2^9); -- First 7 bits
+    am.param_2 = struct.unpack('H', data, 0x11) % (2^9); -- Low 9 bits
     am.param_3 = math.floor(struct.unpack('I', data, 0x11) / (2^5)); -- Rest
     am.actor_index = struct.unpack('H', data, 0x15);
     am.target_index = struct.unpack('H', data, 0x17);
@@ -58,37 +93,32 @@ local function parse_action_message(data)
     return am;
 end
 
--- Get entity name by server ID
+-- Get a monster's name by server ID. Refuses to name a non-monster (a party
+-- member, an NPC) even if its server ID is the one asked for -- SpawnFlags bit
+-- 0x10 is the client's own monster flag (PCs carry 0x02 instead), the same test
+-- geocompass, HXUI and mobdb use.
 -- Args:
 --   server_id (number) - Entity server ID
 -- Returns:
---   string - Entity name or nil
-local function get_entity_name(server_id)
+--   string - Monster's name, or nil if no monster entity has that server ID
+local function get_mob_name(server_id)
     local entity_mgr = AshitaCore:GetMemoryManager():GetEntity();
     if not entity_mgr then
         return nil;
     end
-    
+
     -- Search through all entities to find matching server ID
     for i = 0, 2303 do
         local entity = entity_mgr:GetRawEntity(i);
         if entity and entity.ServerId == server_id then
-            return entity.Name;
+            if bit.band(entity.SpawnFlags, 0x10) ~= 0 then
+                return entity.Name;
+            end
+            return nil;
         end
     end
-    
-    return nil;
-end
 
--- Get player server ID
--- Returns:
---   number - Player's server ID or 0
-local function get_player_id()
-    local party = AshitaCore:GetMemoryManager():GetParty();
-    if party then
-        return party:GetMemberServerId(0);
-    end
-    return 0;
+    return nil;
 end
 
 -- Check if an actor is in the player's party or is a pet/trust belonging to a party member
@@ -106,15 +136,15 @@ local function is_in_party(actor_id)
     -- Check all 6 party slots (0-5) for party members
     for i = 0, 5 do
         local member_id = party:GetMemberServerId(i);
-        if member_id ~= 0 and member_id == actor_id then
+        if member_id ~= 0 and party:GetMemberIsActive(i) == 1 and member_id == actor_id then
             return true;
         end
     end
-    
+
     -- Check if the actor is a pet of any party member (including local player)
     for i = 0, 5 do
         local member_id = party:GetMemberServerId(i);
-        if member_id ~= 0 then
+        if member_id ~= 0 and party:GetMemberIsActive(i) == 1 then
             -- Find the party member's entity
             for j = 1, 2303 do
                 local entity = entity_mgr:GetRawEntity(j);
@@ -143,7 +173,7 @@ local function is_in_party(actor_id)
                     -- Check if trust owner is in party
                     for j = 0, 5 do
                         local member_id = party:GetMemberServerId(j);
-                        if member_id ~= 0 and member_id == owner_entity.ServerId then
+                        if member_id ~= 0 and party:GetMemberIsActive(j) == 1 and member_id == owner_entity.ServerId then
                             return true;
                         end
                     end
@@ -160,68 +190,266 @@ end
 -- Args:
 --   am (table) - Parsed action message data
 local function handle_action_message(am)
-    local player_id = get_player_id();
-    
-    -- Message 6: "${actor} defeats ${target}."
-    -- Used to capture the enemy name when player defeats an enemy
-    if am.message_id == MESSAGE_IDS.DEFEAT then
-        -- Only process if actor is in the party (filter out non-party members)
-        if is_in_party(am.actor_id) and callbacks.on_defeat then
-            local target_name = get_entity_name(am.target_id);
-            if target_name then
-                callbacks.on_defeat(target_name);
-            end
+    -- A monster died. Messages 6/97/113/406/646 name the actor, so a party
+    -- actor credits the kill outright. Messages 20 (self-destruct,
+    -- damage-over-time) and 605 (additional effect) name no usable actor, so the
+    -- dying mob has to be one the party was already acting on.
+    --
+    -- Nothing here counts a kill: message 558 below carries the server's own
+    -- absolute progress number. All this does is resolve the dead mob's name so
+    -- 558 knows which tracked enemy to write that number into.
+    if DEATH_MESSAGE_IDS[am.message_id] then
+        -- is_engaged is an O(1) hash lookup; is_in_party walks the entity table
+        -- (thousands of native reads across party slots, pets and trusts), so it
+        -- goes second. The engaged list is not restricted to the actor-less
+        -- messages: an actor-named kill on a mob we engaged is ours either way,
+        -- and the lookup short-circuits the walk.
+        local credited = packet_handler.is_engaged(am.target_id) or is_in_party(am.actor_id);
+
+        -- Resolve the name before logging so the debug line reflects what
+        -- actually happens below, not just the pre-SpawnFlags credit decision.
+        -- Only look it up when credited: get_mob_name walks the entity table
+        -- (up to 2304 reads), and there is nothing to name otherwise.
+        local target_name = credited and get_mob_name(am.target_id) or nil;
+
+        if callbacks.on_debug then
+            callbacks.on_debug('death msg=%d actor=%d target=%d target_index=%d credited=%s name=%s',
+                am.message_id, am.actor_id, am.target_id, am.target_index, tostring(credited), tostring(target_name));
         end
-    
+
+        -- The mob is dead; its entry can never help again, and leaving it would
+        -- let a respawn on the same server id inherit the credit.
+        packet_handler.clear_engagement(am.target_id);
+
+        if target_name and callbacks.on_defeat then
+            callbacks.on_defeat(target_name);
+        end
+
     -- Message 558: "You defeated a designated target. (Progress: ${number}/${number2})"
     -- This message only provides progress numbers, not enemy identity
     elseif am.message_id == MESSAGE_IDS.DESIGNATED_TARGET then
-        -- Message 558 doesn't contain enemy ID, only progress information
-        -- The enemy name comes from message 6 which fires first
+        -- Message 558 doesn't contain enemy ID, only progress information.
+        -- The enemy name comes from the death message, which fires first.
         if callbacks.on_progress then
             local current = am.param_1;
             local total = am.param_2;
             callbacks.on_progress(current, total);
         end
-    
+
     -- Message 559: "You have successfully completed the training regime."
     elseif am.message_id == MESSAGE_IDS.REGIME_COMPLETE then
         if callbacks.on_regime_complete then
             callbacks.on_regime_complete();
         end
-    
+
     -- Message 643: "Your current training regime will begin anew!"
     elseif am.message_id == MESSAGE_IDS.REGIME_RESET then
         if callbacks.on_regime_reset then
             callbacks.on_regime_reset();
         end
-    
-    -- Message 646: "${actor} uses ${ability}.${lb}${target} falls to the ground."
-    -- Alternative defeat message for abilities/weapon skills
-    elseif am.message_id == MESSAGE_IDS.FALLS_TO_GROUND then
-        -- Only process if actor is in the party (filter out non-party members)
-        if is_in_party(am.actor_id) and callbacks.on_defeat then
-            local target_name = get_entity_name(am.target_id);
-            if target_name then
-                callbacks.on_defeat(target_name);
+    end
+
+    -- NOTE: Message 698 ("Progress: X/Y") is NOT processed because it's used
+    -- by both AMAN and Records of Eminence. Message 558 is AMAN-specific.
+end
+
+-- Mark a mob as one the party has acted on
+-- Args:
+--   server_id (number) - Mob's server ID
+--   now (number) - Optional timestamp; defaults to os.time()
+function packet_handler.record_engagement(server_id, now)
+    engaged[server_id] = now or os.time();
+end
+
+-- Check whether a mob is one the party has acted on recently
+-- Args:
+--   server_id (number) - Mob's server ID
+-- Returns:
+--   boolean - True if engaged within ENGAGED_TTL seconds
+function packet_handler.is_engaged(server_id)
+    local seen = engaged[server_id];
+    if not seen then
+        return false;
+    end
+    if (os.time() - seen) > ENGAGED_TTL then
+        engaged[server_id] = nil;
+        return false;
+    end
+    return true;
+end
+
+-- Forget every engagement. Server IDs are only unique within one zone instance.
+function packet_handler.clear_engagements()
+    engaged = {};
+end
+
+-- Forget one mob's engagement
+-- Args:
+--   server_id (number) - Mob's server ID
+function packet_handler.clear_engagement(server_id)
+    engaged[server_id] = nil;
+end
+
+-- Whether a server ID counts as "ours" for engagement purposes: the six party
+-- slots plus each member's pet/avatar/automaton, which has no party slot of its
+-- own. Reached through each slot's target index, so this costs a dozen memory
+-- reads rather than a walk of the entity table, and returns as soon as it
+-- matches.
+--
+-- Trusts are deliberately not included: a trust only ever acts against something
+-- a party member is already acting against, so the party member's own action
+-- already covers whatever the trust would have added.
+--
+-- Args:
+--   actor_id (number) - Server ID from an Action packet
+-- Returns:
+--   boolean - True if the actor is a party member or a party member's pet
+local function is_party_actor(actor_id)
+    -- A malformed packet reads an actor id of 0, which must never match a
+    -- vacated party or pet slot that also holds 0.
+    if actor_id == 0 then
+        return false;
+    end
+
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    local entity_mgr = AshitaCore:GetMemoryManager():GetEntity();
+    if not party or not entity_mgr then
+        return false;
+    end
+
+    for i = 0, 5 do
+        local member_id = party:GetMemberServerId(i);
+        if member_id ~= 0 and party:GetMemberIsActive(i) == 1 then
+            if member_id == actor_id then
+                return true;
+            end
+
+            local member_index = party:GetMemberTargetIndex(i);
+            local member = member_index ~= 0 and entity_mgr:GetRawEntity(member_index) or nil;
+            if member and member.PetTargetIndex > 0 then
+                local pet = entity_mgr:GetRawEntity(member.PetTargetIndex);
+                -- A vacated pet slot can resolve to an entity with a zero or
+                -- absent server ID; the actor_id == 0 guard above covers both.
+                if pet and pet.ServerId == actor_id then
+                    return true;
+                end
             end
         end
     end
-    
-    -- NOTE: Message 698 ("Progress: X/Y") is NOT processed because it's used
-    -- by both AMAN and Records of Eminence. Message 558 is AMAN-specific.
+
+    return false;
+end
+
+-- Minimal decode of an Action packet (0x28): who acted, and which server IDs
+-- they targeted. This packet is bit-packed rather than byte-aligned like 0x29,
+-- so it needs ashita.bits.unpack_be instead of struct.unpack.
+--
+-- Every field between the actor ID and the target list, and every field inside
+-- each target's actions, is read even though none of the values are kept: the
+-- packet is packed bit by bit, so a field cannot be skipped without decoding its
+-- width first. The actor ID comes first, so a packet from somebody else's action
+-- bails after 32 bits -- which is most of them in a crowded zone.
+--
+-- Args:
+--   e (table) - Packet event data (needs e.data_raw and e.size)
+-- Returns:
+--   table - Array of target server IDs, empty when the actor is not ours
+local function parse_action(e)
+    local bit_offset = 40; -- header
+    local max_bits = e.size * 8;
+
+    local function bits(n)
+        if (bit_offset + n) > max_bits then
+            max_bits = 0; -- malformed; every further read returns 0
+            return 0;
+        end
+        local v = ashita.bits.unpack_be(e.data_raw, 0, bit_offset, n);
+        bit_offset = bit_offset + n;
+        return v;
+    end
+
+    local actor_id = bits(32);
+    if not is_party_actor(actor_id) then
+        return {};
+    end
+
+    local target_count = bits(6);
+    bits(4); -- reserved
+    local action_type = bits(4);
+    if action_type == 8 or action_type == 9 then
+        bits(16); bits(16); -- Param, SpellGroup
+    else
+        bits(32); -- Param
+    end
+    bits(32); -- Recast
+
+    local targets = {};
+    for _ = 1, target_count do
+        local target_id = bits(32);
+        if max_bits == 0 then
+            break; -- packet ran out mid-read; nothing past here is real data
+        end
+        targets[#targets + 1] = target_id;
+
+        for _ = 1, bits(4) do -- action count
+            bits(5); bits(12); bits(7); bits(3); bits(17); bits(10); bits(31); -- reaction..flags
+            if bits(1) == 1 then
+                bits(10); bits(17); bits(10); -- additional effect
+            end
+            if bits(1) == 1 then
+                bits(10); bits(14); bits(10); -- spikes effect
+            end
+        end
+    end
+
+    return targets;
+end
+
+-- Record every mob a party action touched
+-- Args:
+--   e (table) - Packet event data for an Action packet (0x28)
+local function record_engagements(e)
+    -- ponytail: party members are recorded alongside mobs rather than filtered
+    -- out with a SpawnFlags check here. A cure, a buff, or an AoE lands this
+    -- set with a party member's server ID as readily as a mob's, so this list
+    -- alone does NOT prove a dying entity is a monster. What makes that
+    -- harmless is get_mob_name's SpawnFlags check at credit time, which
+    -- refuses to name anything this set holds that isn't actually a monster.
+    -- Add the flag check here too if the set ever grows enough to matter for
+    -- its own sake (e.g. size, or another reader that trusts it directly).
+    local targets = parse_action(e);
+    if #targets == 0 then
+        return;
+    end
+
+    local now = os.time();
+    for _, target_id in ipairs(targets) do
+        packet_handler.record_engagement(target_id, now);
+    end
 end
 
 -- Handle incoming packet
 -- Args:
 --   e (table) - Packet event data
 function packet_handler.handle_incoming_packet(e)
-    -- Only process action message packets (0x29)
+    -- Action message: defeats, progress, regime state
     if e.id == 0x29 then
         local am = parse_action_message(e.data);
         if am then
             handle_action_message(am);
         end
+
+    -- Action: who hit what, which is how a mob gets onto the engaged list
+    elseif e.id == 0x28 then
+        -- Every action by every player in the zone arrives here, so skip the
+        -- decode outright when nothing will ever read the list back.
+        if callbacks.should_record_engagements == nil or callbacks.should_record_engagements() then
+            record_engagements(e);
+        end
+
+    -- Zone in / zone out. Server IDs are only unique within one zone instance.
+    elseif e.id == 0x0A or e.id == 0x0B then
+        packet_handler.clear_engagements();
     end
 end
 
