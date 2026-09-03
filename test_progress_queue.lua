@@ -187,13 +187,14 @@ local function progress(current)
 end
 
 -- A single kill pairs with the single 558 behind it.
+local before = saved_calls;
 kill(0x02000123, 6);
 progress(1);
-assert(saved_calls > 0, 'a credited kill saves');
+assert_eq(saved_calls - before, 1, 'a credited kill saves');
 
 -- The AoE case: both mobs die before either 558 arrives. A single slot would
 -- drop the first death entirely and write the second 558 into the wrong row.
-local before = saved_calls;
+before = saved_calls;
 kill(0x02000123, 20);          -- Bomb, killed by a damage-over-time tick
 kill(0x02000456, 20);          -- Goblin Smithy, same AoE
 progress(2);                   -- Bomb's count
