@@ -37,11 +37,21 @@ demanded it and both because they are safer:
     client in a zone), but they stop agreeing the moment two boxes are standing
     at different Field Manuals in the same zone, which is common.
 
-SAME-LEVEL ASSUMPTION: FoV and GoV page lists vary by character level, so
-Option Index 3 is not the same page on a level 30 and a level 75 character. v1
-assumes every box is the same level and refuses to replay when the leader's main
-job level does not match, rather than silently registering the wrong regime. See
-the README.
+LEVELS: the concern that a raw Option Index selects a different page at a
+different level does not hold on the intended release platform. CatsEyeXI runs a
+LandSandBoat fork, whose scripts/globals/regimes.lua maps options to pages
+through a constant table -- page N is always option 2 + 16*N, for both Fields
+and Grounds -- and looks the page up with getPageByNum(regimeType, zoneId, N)
+against a per-zone table that takes no level input. The page bitmask the server
+sends at book open is derived from the zone's page count, not the player's
+level, and registration performs no level check at all. So in the same zone at
+the same book, one option index means one page for every character.
+
+Mixed levels are therefore allowed by default and only warned about, because the
+real consequence is a gameplay one: kill credit runs through checkKillCredit(),
+so a character outside the page's level range registers the page fine and simply
+earns no credit. /at mirror samelevel on restores a hard refusal for servers
+whose page list is level-filtered.
 ]]
 
 local mirror = {};
@@ -83,8 +93,13 @@ local ACTION_CATEGORY_TALK = 0;
 local CHOICE = {
     SIZE         = 0x14,
     TARGET       = 0x04, -- uint32, server id of the event owner
-    OPTION       = 0x08, -- uint16, the actual selection
-    UNKNOWN1     = 0x0A, -- uint16, menu-dependent flags; 0x4000 closes a menu
+    -- Windower splits the selection into two shorts, but the server reads one
+    -- 32-bit value: regimes.lua tests bit 0x80000000 for "repeat this regime"
+    -- before masking it off with 0x7FFFFFFF. So OPTION is the low half and
+    -- UNKNOWN1 the flag half of a single number. Cloning the packet preserves
+    -- both, which is how the repeat checkbox survives a mirror.
+    OPTION       = 0x08, -- uint16, low half of the 32-bit option
+    UNKNOWN1     = 0x0A, -- uint16, high half: 0x8000 repeat, 0x4000 closes a menu
     TARGET_INDEX = 0x0C, -- uint16
     AUTOMATED    = 0x0E, -- uint8, 1 when the client generated the response itself
     UNKNOWN2     = 0x0F, -- uint8
@@ -143,9 +158,11 @@ local INTERACT_RANGE = 6.0;
 -- is no reason to stat a file 60 times a second.
 local TICK_INTERVAL = 0.05;
 
--- Books recognised without any A.M.A.N. text confirmation. Retail and CatsEyeXI
--- both use these names; a server that renames them is handled by the auto-learn
--- in finalise_capture below, or by /at mirror book <name>.
+-- Books recognised without any A.M.A.N. text confirmation. Confirmed against
+-- CatsEyeXI's own sql/npc_list.sql, where the display name column holds exactly
+-- 'Field Manual' (76 rows) and 'Grounds Tome' (120 rows) -- so no configuration
+-- is needed there. A server that renames them is handled by the auto-learn in
+-- finalise_capture below, or by /at mirror book <name>.
 local DEFAULT_BOOKS = { 'Field Manual', 'Grounds Tome' };
 
 -- ============================================================================
@@ -195,6 +212,10 @@ local replay = {
     book_index  = 0,
     trigger     = nil,
     record      = nil,
+    -- Whether this client has seen the A.M.A.N. text for the event it just
+    -- opened, and whether it is required to before the first choice goes out.
+    confirmed    = false,
+    require_text = false,
 };
 
 -- Most recent incoming interaction packet. seq only ever increments, which is
@@ -251,6 +272,13 @@ local function set_u32(s, off, value)
     local b2 = math.floor(value / 0x10000) % 0x100;
     local b3 = math.floor(value / 0x1000000) % 0x100;
     return s:sub(1, off) .. string.char(b0, b1, b2, b3) .. s:sub(off + 5);
+end
+
+-- The whole 32-bit selection, as the server reads it.
+local function full_option(packet)
+    local low = u16(packet, CHOICE.OPTION) or 0;
+    local high = u16(packet, CHOICE.UNKNOWN1) or 0;
+    return high * 0x10000 + low;
 end
 
 local function to_hex(s)
@@ -757,14 +785,19 @@ local function start_replay(record)
         return;
     end
 
-    -- The same-level assumption, enforced rather than assumed. Option Index is
-    -- a position in a level-dependent page list, so replaying it at a different
-    -- level registers a different regime.
+    -- On a LandSandBoat server (which CatsEyeXI forks) the option-to-page map is
+    -- a constant and registration is not level checked, so a level difference
+    -- picks the right page regardless. It still decides whether the character
+    -- earns credit for the kills, so it is worth saying out loud.
     local level = get_level();
     if level ~= record.level then
-        hooks.warnf('mirror: %s is level %d and this character is level %d; page lists differ, so nothing was mirrored.',
+        if config.same_level then
+            hooks.warnf('mirror: %s is level %d and this character is level %d; /at mirror samelevel is on, so nothing was mirrored.',
+                record.leader, record.level, level);
+            return;
+        end
+        hooks.warnf('mirror: %s is level %d and this character is level %d. The same page registers either way, but kills only count inside the page\'s level range.',
             record.leader, record.level, level);
-        return;
     end
 
     local status = get_status();
@@ -785,6 +818,15 @@ local function start_replay(record)
     trigger = set_u16(trigger, ACTION.CATEGORY, ACTION_CATEGORY_TALK);
 
     replay.state       = 'pending';
+    replay.confirmed   = false;
+    -- The book's top menu can be replaced by another dialog carrying the same
+    -- Menu ID -- on a LandSandBoat server an active hunt makes bookOnTrigger
+    -- start the same event id with different parameters, producing a
+    -- cancel-the-hunt prompt where the page list should be. The Menu ID check
+    -- cannot see that, but the A.M.A.N. text can: if the leader's interaction
+    -- was confirmed by that text, require the same here before choosing
+    -- anything.
+    replay.require_text = config.strict and record.confirmed;
     replay.steps       = record.steps;
     replay.record      = record;
     replay.index       = 1;
@@ -829,6 +871,14 @@ local function tick_replay(now)
 
     elseif replay.state == 'wait_menu' then
         if menu.seq > replay.menu_mark then
+            -- Hold the very first choice until the book identifies itself.
+            if replay.index == 1 and replay.require_text and not replay.confirmed then
+                if now > replay.deadline then
+                    abort_replay('this character never saw the A.M.A.N. text, so the menu it opened is not the book.');
+                end
+                return;
+            end
+
             local expected = replay.steps[replay.index].menu_id;
 
             -- A different Menu ID means this client is looking at a different
@@ -920,6 +970,7 @@ function mirror.default_settings()
         enabled     = false,   -- per character, off until explicitly turned on
         role        = 'leader',-- 'leader' broadcasts and never replays
         strict      = true,    -- require the A.M.A.N. text before broadcasting
+        same_level  = false,   -- refuse to replay across a level difference
         leader_name = '',      -- '' accepts any leader
         books       = books,
     };
@@ -930,6 +981,12 @@ end
 function mirror.note_tome_text()
     if leader.active then
         leader.confirmed = true;
+    end
+
+    -- Also proves, on a replaying alt, that the menu it just opened is the
+    -- book's own and not something substituted for it.
+    if replay.state ~= 'idle' then
+        replay.confirmed = true;
     end
 end
 
@@ -964,9 +1021,8 @@ function mirror.handle_outgoing_packet(e)
         };
 
         if dump_enabled then
-            hooks.printf('mirror: capture choice %d option=%d menu=%d %s',
-                #leader.steps, u16(packet, CHOICE.OPTION) or 0,
-                u16(packet, CHOICE.MENU) or 0, to_hex(packet));
+            hooks.printf('mirror: capture choice %d option=0x%08X menu=%d %s',
+                #leader.steps, full_option(packet), u16(packet, CHOICE.MENU) or 0, to_hex(packet));
         end
     end
 end
@@ -1051,8 +1107,9 @@ end
 -- ============================================================================
 
 local function print_status()
-    hooks.printf('Mirror: %s, role %s, strict %s',
-        config.enabled and 'ON' or 'OFF', config.role, config.strict and 'on' or 'off');
+    hooks.printf('Mirror: %s, role %s, strict %s, samelevel %s',
+        config.enabled and 'ON' or 'OFF', config.role,
+        config.strict and 'on' or 'off', config.same_level and 'on' or 'off');
     hooks.printf('  Leader filter: %s', config.leader_name ~= '' and config.leader_name or '(any)');
     hooks.printf('  Books: %s', table.concat(config.books, ', '));
     hooks.printf('  Channel: %s', transport.path());
@@ -1073,6 +1130,7 @@ local function print_help()
     hooks.printf('  /at mirror follower       - This character replays and never broadcasts');
     hooks.printf('  /at mirror only <name>    - Only accept broadcasts from <name> ("any" clears)');
     hooks.printf('  /at mirror strict on|off  - Require the A.M.A.N. text before broadcasting');
+    hooks.printf('  /at mirror samelevel on|off - Refuse to mirror across a level difference');
     hooks.printf('  /at mirror book <name>    - Add a book NPC name ("reset" restores defaults)');
     hooks.printf('  /at mirror stop           - Abort an in-flight replay');
     hooks.printf('  /at mirror dump           - Toggle raw packet logging');
@@ -1138,6 +1196,20 @@ function mirror.handle_command(args)
         hooks.printf('Mirror strict mode %s. %s', config.strict and 'on' or 'off',
             config.strict and 'Only interactions that print the A.M.A.N. text are broadcast.'
                            or 'Interactions at a known book name are broadcast without confirmation.');
+
+    elseif sub == 'samelevel' then
+        local value = args[4] and args[4]:lower() or nil;
+        if value == 'on' then
+            config.same_level = true;
+        elseif value == 'off' then
+            config.same_level = false;
+        else
+            config.same_level = not config.same_level;
+        end
+        hooks.save();
+        hooks.printf('Mirror same-level requirement %s. %s', config.same_level and 'on' or 'off',
+            config.same_level and 'A level difference now blocks mirroring.'
+                               or 'Levels may differ; the same page registers either way.');
 
     elseif sub == 'book' then
         local name = table.concat(args, ' ', 4);

@@ -69,7 +69,8 @@ See [FoV/GoV Multibox Mirror](#fovgov-multibox-mirror) before enabling any of th
 - `/at mirror leader` - This character broadcasts its page selections and **never** replays anyone else's
 - `/at mirror follower` - This character replays the leader's selections and never broadcasts
 - `/at mirror only <name>` - Only accept broadcasts from `<name>` (`/at mirror only any` clears the filter)
-- `/at mirror strict on|off` - Require the A.M.A.N. tome text before broadcasting (default **on**)
+- `/at mirror strict on|off` - Require the A.M.A.N. tome text before broadcasting, and before an alt answers the first menu (default **on**)
+- `/at mirror samelevel on|off` - Refuse to mirror across a level difference (default **off**; see [Levels](#levels))
 - `/at mirror book <name>` - Add a book NPC name; `/at mirror book reset` restores the defaults
 - `/at mirror stop` - Abort an in-flight replay and close the menu
 - `/at mirror dump` - Toggle raw packet logging, for checking packet offsets against your server
@@ -192,18 +193,34 @@ sent over the network by this addon.
 `/at mirror` prints the resolved channel path, and reports the last write error
 if a broadcast failed.
 
-### Same-level assumption
+### Levels
 
-**v1 assumes every box is the same level.** FoV and GoV page lists vary by
-character level, so the same menu position is a different page for a level 30 and
-a level 75 character. The addon replays the leader's *Option Index* — the
-position in the list — because the client never receives per-option page text it
-could match on semantically.
+**Mixed levels work on CatsEyeXI, and are allowed by default.**
 
-Rather than trusting you to remember this, the mirror enforces it: the leader's
-main job level travels with each broadcast, and an alt whose level differs
-refuses to replay and says so. Mirroring across levels needs semantic page
-matching, which is not implemented.
+The usual worry with replaying a raw Option Index is that FoV/GoV page lists are
+level-dependent, so the same menu position would be a different page on a level
+30 and a level 75 character. That is not how this server behaves. CatsEyeXI runs
+a [LandSandBoat](https://github.com/LandSandBoat/server) fork, and its
+`scripts/globals/regimes.lua` shows:
+
+- Option indices map to pages through a **constant table** — page *N* is always
+  option `2 + 16N`, for both Fields and Grounds.
+- The page itself is looked up with `getPageByNum(regimeType, zoneId, N)` against
+  a **per-zone** table that takes no level input.
+- The page bitmask the server sends when the book opens is derived from the
+  zone's page count, not the player's level.
+- Registration (`bookOnEventFinish`) performs **no level check at all**.
+
+So in the same zone at the same book, one option index means one page for every
+character, whatever their level.
+
+What a level difference *does* affect is credit, not selection: kills run through
+`checkKillCredit()`, so a character outside the page's level range registers the
+page normally and simply earns nothing for it. The mirror says so when it spots a
+level difference, and carries on.
+
+If you are running this somewhere the page list really is level-filtered,
+`/at mirror samelevel on` restores a hard refusal.
 
 ### Safety
 
@@ -231,20 +248,43 @@ misfire. The guards here:
 ### Server compatibility
 
 Packet layouts (outgoing `0x01A` and `0x05B`, incoming `0x032` and `0x034`) are
-taken from Windower's `fields.lua` and match retail. The A.M.A.N. text the strict
-gate keys off is the same CatsEyeXI-tested string the rest of the addon already
-uses.
+taken from Windower's `fields.lua`. The A.M.A.N. text the strict gate keys off is
+the same CatsEyeXI-tested string the rest of the addon already uses.
 
-If your server differs, `/at mirror dump` logs the raw hex of every captured and
-injected packet plus each incoming menu's NPC, zone and Menu ID, which is what
-you need to check the offsets. A server that renames its manuals is handled
-automatically: a confirmed tome under an unrecognised name is learned into
-settings after one interaction, and `/at mirror book <name>` adds one by hand.
+Checked against CatsEyeXI's own `scripts/globals/regimes.lua`, which differs from
+LandSandBoat base only in status-effect call style — the menu logic is identical:
+
+- **Menu ID is a per-zone constant** (the zone's `event` id: 61, 47, 32, 266…),
+  not a per-session value. Every character at the same book in the same zone gets
+  the same one, so comparing the leader's against the alt's is a sound divergence
+  check rather than a source of false alarms.
+- **The selection is one 32-bit value**, not the 16-bit "Option Index" Windower
+  names: the server tests bit `0x80000000` for "repeat this regime" before
+  masking it off. Windower's `Option Index` is its low half and `_unknown1` its
+  high half. The mirror clones the packet rather than rebuilding it, so both
+  halves — including the repeat checkbox — carry over untouched.
+- **A hunt in progress substitutes the menu.** `bookOnTrigger` starts the *same
+  event id* with different parameters when `[hunt]status >= 1`, producing a
+  cancel-the-hunt prompt where the page list should be. The Menu ID check cannot
+  see this, so in strict mode an alt also has to see the A.M.A.N. text for the
+  menu it just opened before it will answer anything; a substituted menu is
+  closed instead of answered.
+
+`/at mirror dump` logs the raw hex of every captured and injected packet, the
+full 32-bit option value, and each incoming menu's NPC, zone and Menu ID. A
+server that renames its manuals is handled automatically: a confirmed tome under
+an unrecognised name is learned into settings after one interaction, and
+`/at mirror book <name>` adds one by hand.
+
+**Still unverified in-game.** The packet-injection contract and these flows have
+been exercised against a stubbed Ashita API, not a live client. Run the first
+session with `/at mirror dump` on.
 
 ### Known limits
 
 - Same machine only (see transport above).
-- Same level only (see above).
+- One book at a time: the alt resolves the leader's book by name, so a Field
+  Manual leader can only drive alts at a Field Manual.
 - The alts replay after the leader's interaction *finishes*, not keystroke by
   keystroke, so they start about a second behind the leader closing the menu.
   Buffering the whole sequence is what makes the "was this really a book?" check
@@ -304,11 +344,13 @@ Completely unnecessary AI generated image
 - **Shared-File Transport**: Ashita v4 has no inter-client IPC, so broadcasts go through `config/addons/AMANTracker/mirror_channel.txt`. Records carry an `#END` sentinel so a follower that reads mid-rewrite discards the partial record instead of acting on half a sequence. Mirroring therefore spans only clients sharing that path
 - **Per-Client ID Resolution**: Each alt resolves its own copy of the book from its own entity table and reads its own Menu ID from its own interaction packet, rather than copying the leader's -- so two boxes at different Field Manuals in the same zone both work
 - **Gated Sequencing**: Each menu choice waits for that alt to actually reach the next menu before being sent, instead of firing the whole recorded sequence at once
-- **Same-Level Enforcement**: Page lists are level-dependent, so the leader's level travels with each broadcast and an alt at a different level refuses to replay rather than registering the wrong page
+- **Mixed Levels Supported**: Confirmed against CatsEyeXI's `regimes.lua` that option indices map to pages through a constant table (page N is always option `2 + 16N`) with no level input and no level check on registration, so the same option picks the same page at any level. A level difference is reported (kills only count inside the page's level range) but does not block mirroring; `/at mirror samelevel on` restores a hard refusal
+- **Substituted-Menu Guard**: An active hunt makes the server start the *same* event id with different parameters, producing a cancel-the-hunt prompt the Menu ID check cannot distinguish. In strict mode an alt must also see the A.M.A.N. text for the menu it opened before answering, and closes the menu instead if it does not
+- **32-Bit Option Preserved**: The server reads the selection as one 32-bit value whose high bit means "repeat this regime"; cloning the packet rather than rebuilding it carries both halves over, so the repeat checkbox survives a mirror
 - **Interaction Gating**: Only category 0 ("talk") actions are captured, and a broadcast requires the A.M.A.N. tome text to have appeared during the event (`/at mirror strict off` relaxes this to a book-name match). Trades, purchases and other menus are never mirrored
 - **Graceful Abort**: A Menu ID mismatch, a menu that never arrives, or an event that never closes stops the replay and sends the standard menu-close response, leaving the character at the book rather than stuck in a dialog
 - **Book Name Auto-Learn**: A confirmed tome under an unrecognised name is added to settings after one interaction; `/at mirror book <name>` adds one by hand
-- **New `/at mirror` Commands**: `on`/`off`, `leader`/`follower`, `only <name>`, `strict on|off`, `book <name>`, `stop`, and `dump` for raw packet logging
+- **New `/at mirror` Commands**: `on`/`off`, `leader`/`follower`, `only <name>`, `strict on|off`, `samelevel on|off`, `book <name>`, `stop`, and `dump` for raw packet logging
 
 ### Version 2.7
 - **Fixed Actor-less Kill Credit**: Self-destruct and damage-over-time deaths arrive as action message 20 ("The Bomb falls to the ground."), which names no actor the client can match against the party, so the kill was silently dropped
