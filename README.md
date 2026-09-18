@@ -31,6 +31,7 @@ Or the typical ImGui
 - **Automatic regime resets** - Detects when training restarts
 - **Draggable UI** - Click and drag to reposition the tracker
 - **Fully automatic** - No setup required, just start training
+- **FoV/GoV multibox mirror** - Optional, off by default: pick a training page on one character and every other box on the same machine registers the same page ([details](#fovgov-multibox-mirror))
 
 
 ## Installation
@@ -58,6 +59,20 @@ Or the typical ImGui
 - `/at ui imgui` - Switch to classic solid window mode
 - `/at clear` - Clear current training data and reset tracker
 - `/at debug` - Toggle death-packet logging (prints message id, actor, target, target index, credit decision and resolved name)
+
+### Mirror commands
+
+See [FoV/GoV Multibox Mirror](#fovgov-multibox-mirror) before enabling any of these.
+
+- `/at mirror` - Show mirror status (role, strict mode, known books, channel path)
+- `/at mirror on` / `/at mirror off` - Enable or disable mirroring on this character (default **off**)
+- `/at mirror leader` - This character broadcasts its page selections and **never** replays anyone else's
+- `/at mirror follower` - This character replays the leader's selections and never broadcasts
+- `/at mirror only <name>` - Only accept broadcasts from `<name>` (`/at mirror only any` clears the filter)
+- `/at mirror strict on|off` - Require the A.M.A.N. tome text before broadcasting (default **on**)
+- `/at mirror book <name>` - Add a book NPC name; `/at mirror book reset` restores the defaults
+- `/at mirror stop` - Abort an in-flight replay and close the menu
+- `/at mirror dump` - Toggle raw packet logging, for checking packet offsets against your server
 
 
 ## How It Works
@@ -115,6 +130,128 @@ This hybrid approach ensures:
 - UI mode preference saved automatically
 
 
+## FoV/GoV Multibox Mirror
+
+Mirrors one character's Fields of Valor / Grounds of Valor page selection onto
+every other character running the addon. Pick "Individual Training", a page list
+and a page on the leader, and each alt opens its own Field Manual and registers
+the same page.
+
+This is a narrow port of DiscipleOfEris's Windower addon
+[NpcInteract](https://github.com/DiscipleOfEris/NpcInteract). Only the
+book-selection path is ported; the rest of NpcInteract's NPC surface (warps, key
+items, Goblin Footprints) is deliberately left out.
+
+### Setup
+
+On the character you want to drive from:
+
+```
+/at mirror leader
+/at mirror on
+```
+
+On every other box:
+
+```
+/at mirror follower
+/at mirror on
+```
+
+Park all of them at a Field Manual or Grounds Tome in the same zone, then pick a
+page on the leader. Each alt opens its own book and walks the same menu.
+
+`leader` and `follower` are exclusive roles, not a preference. A character set to
+`leader` will never replay anything, whatever lands on the channel — that is the
+hard "leader only, never mirror" mode, and it is the default role so that turning
+mirroring on without thinking about it cannot make a character start acting on
+its own.
+
+### Transport dependency
+
+Windower gives NpcInteract an inter-client IPC bus for free
+(`send_ipc_message`). **Ashita v4 has no equivalent** — each game instance runs
+its own isolated Lua state. This addon therefore broadcasts through a shared
+file:
+
+```
+<Ashita>\config\addons\AMANTracker\mirror_channel.txt
+```
+
+The leader rewrites that file after each book interaction; followers poll it
+about twenty times a second. Each record is terminated with an `#END` sentinel,
+so a follower that catches the file mid-rewrite discards the partial record and
+picks it up on the next poll rather than acting on half a sequence.
+
+**This means mirroring only spans clients that share that path.** Boxes running
+on separate machines, or under separate Ashita installs with their own config
+trees, will not see each other's broadcasts. Point them at a shared location — or
+run all the boxes off one install — if you need to span machines. Nothing is
+sent over the network by this addon.
+
+`/at mirror` prints the resolved channel path, and reports the last write error
+if a broadcast failed.
+
+### Same-level assumption
+
+**v1 assumes every box is the same level.** FoV and GoV page lists vary by
+character level, so the same menu position is a different page for a level 30 and
+a level 75 character. The addon replays the leader's *Option Index* — the
+position in the list — because the client never receives per-option page text it
+could match on semantically.
+
+Rather than trusting you to remember this, the mirror enforces it: the leader's
+main job level travels with each broadcast, and an alt whose level differs
+refuses to replay and says so. Mirroring across levels needs semantic page
+matching, which is not implemented.
+
+### Safety
+
+Mirroring the wrong interaction — a trade, a purchase — is how NpcInteract can
+misfire. The guards here:
+
+- **Off by default**, per character, and the default role never replays.
+- **Only category 0 ("talk") actions are ever captured.** A trade, an attack or a
+  spell is ignored outright.
+- **A broadcast requires proof it was a book.** In strict mode (the default) the
+  A.M.A.N. tome text must have appeared during the event; that is the only
+  positive evidence the client has that the menu tree was a training regime.
+  `/at mirror strict off` falls back to matching the NPC's name instead.
+- **Each choice waits for the alt's own client to advance.** NpcInteract fires
+  the whole recorded sequence the moment the first menu arrives; here a choice is
+  only sent once that alt has actually reached the next menu.
+- **A menu mismatch aborts.** If an alt's Menu ID differs from the one the leader
+  answered, the replay stops and sends the standard menu-close response, leaving
+  the character standing at the book rather than stuck in a half-answered dialog.
+- **Refusals are loud.** Wrong zone, wrong level, book out of range, character
+  busy, stale broadcast — each prints why nothing happened.
+- **Injected packets are never re-captured**, so a follower can never re-broadcast
+  what it just replayed.
+
+### Server compatibility
+
+Packet layouts (outgoing `0x01A` and `0x05B`, incoming `0x032` and `0x034`) are
+taken from Windower's `fields.lua` and match retail. The A.M.A.N. text the strict
+gate keys off is the same CatsEyeXI-tested string the rest of the addon already
+uses.
+
+If your server differs, `/at mirror dump` logs the raw hex of every captured and
+injected packet plus each incoming menu's NPC, zone and Menu ID, which is what
+you need to check the offsets. A server that renames its manuals is handled
+automatically: a confirmed tome under an unrecognised name is learned into
+settings after one interaction, and `/at mirror book <name>` adds one by hand.
+
+### Known limits
+
+- Same machine only (see transport above).
+- Same level only (see above).
+- The alts replay after the leader's interaction *finishes*, not keystroke by
+  keystroke, so they start about a second behind the leader closing the menu.
+  Buffering the whole sequence is what makes the "was this really a book?" check
+  possible at all.
+- One replay at a time per character; a broadcast arriving mid-replay is ignored.
+
+
 ## Data Storage
 
 Settings saved to: `~\Ashita\config\addons\AMANTracker\[character_name]\settings.lua`
@@ -125,6 +262,10 @@ Stored data includes:
 - Target level range
 - Training area zone
 - UI mode preference (gdifonts or imgui)
+- Mirror configuration (enabled, role, strict mode, leader filter, known book names)
+
+The mirror's broadcast channel is shared by every character on the install and
+lives one level up, at `~\Ashita\config\addons\AMANTracker\mirror_channel.txt`.
 
 
 ## Requirements
@@ -157,7 +298,19 @@ Completely unnecessary AI generated image
 
 
 ## Changelog
-### Version 2.7 (Current)
+### Version 2.8 (Current)
+- **New Feature: FoV/GoV Multibox Mirror**: Pick a training page on one character and every other box on the machine registers the same page. Off by default; see [FoV/GoV Multibox Mirror](#fovgov-multibox-mirror)
+- **Ported From NpcInteract**: A narrow port of DiscipleOfEris's Windower addon, covering only the book-selection path
+- **Shared-File Transport**: Ashita v4 has no inter-client IPC, so broadcasts go through `config/addons/AMANTracker/mirror_channel.txt`. Records carry an `#END` sentinel so a follower that reads mid-rewrite discards the partial record instead of acting on half a sequence. Mirroring therefore spans only clients sharing that path
+- **Per-Client ID Resolution**: Each alt resolves its own copy of the book from its own entity table and reads its own Menu ID from its own interaction packet, rather than copying the leader's -- so two boxes at different Field Manuals in the same zone both work
+- **Gated Sequencing**: Each menu choice waits for that alt to actually reach the next menu before being sent, instead of firing the whole recorded sequence at once
+- **Same-Level Enforcement**: Page lists are level-dependent, so the leader's level travels with each broadcast and an alt at a different level refuses to replay rather than registering the wrong page
+- **Interaction Gating**: Only category 0 ("talk") actions are captured, and a broadcast requires the A.M.A.N. tome text to have appeared during the event (`/at mirror strict off` relaxes this to a book-name match). Trades, purchases and other menus are never mirrored
+- **Graceful Abort**: A Menu ID mismatch, a menu that never arrives, or an event that never closes stops the replay and sends the standard menu-close response, leaving the character at the book rather than stuck in a dialog
+- **Book Name Auto-Learn**: A confirmed tome under an unrecognised name is added to settings after one interaction; `/at mirror book <name>` adds one by hand
+- **New `/at mirror` Commands**: `on`/`off`, `leader`/`follower`, `only <name>`, `strict on|off`, `book <name>`, `stop`, and `dump` for raw packet logging
+
+### Version 2.7
 - **Fixed Actor-less Kill Credit**: Self-destruct and damage-over-time deaths arrive as action message 20 ("The Bomb falls to the ground."), which names no actor the client can match against the party, so the kill was silently dropped
 - **Expanded Death Message Detection**: Added messages 20, 97 (defeated by), 113 (spell), 406 (weapon skill) and 605 (additional effect) alongside the existing 6 and 646
 - **Added Engaged-Mob List**: Built from Action packets (0x28), tracking every mob a party member or their pet has acted on; an actor-less death is credited only if the dying mob is on it
