@@ -9,7 +9,7 @@ This addon is designed for Ashita v4.
 
 addon.name      = 'AMANTracker';
 addon.author    = 'Seekey';
-addon.version   = '2.7';
+addon.version   = '2.8';
 addon.desc      = 'GUI Tracker for Adventurers Mutual Aid Network Training Regimes';
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
@@ -24,6 +24,9 @@ local tracker_ui = require('lib.tracker_ui');
 
 -- Load packet handler module
 local packet_handler = require('lib.packet_handler');
+
+-- Load the FoV/GoV multibox mirror module
+local mirror = require('lib.mirror');
 
 -- Custom print functions for categorized output.
 local function printf(fmt, ...)  print(chat.header(addon.name) .. chat.message(fmt:format(...))) end
@@ -72,6 +75,9 @@ local default_settings = T{
     target_level_range = nil,
     training_area_zone = nil,
     ui_mode = 'gdifonts',  -- 'gdifonts' or 'imgui'
+    -- Mirror config lives only on saved_data, like ui_mode, so syncing back from
+    -- training_data can never blank it out.
+    mirror = mirror.default_settings(),
 };
 
 -- Training data storage (includes both persistent and transient data)
@@ -119,6 +125,10 @@ local function apply_saved_data()
     sync_persistent_data(saved_data, training_data);
     tracker_ui.set_ui_mode(saved_data.ui_mode or 'gdifonts');
 
+    -- A settings file written before 2.8 has no mirror table at all.
+    saved_data.mirror = saved_data.mirror or mirror.default_settings();
+    mirror.apply_config(saved_data.mirror);
+
     if training_data.is_active and #training_data.enemies > 0 then
         printf(MESSAGES.RESTORED_HUNT);
         tracker_ui.open();
@@ -129,6 +139,16 @@ end
 
 -- Initialize the UI with training data reference
 tracker_ui.init(training_data, saved_data.ui_mode or 'gdifonts');
+
+-- Initialize the mirror. Its own config arrives via apply_saved_data below, and
+-- again from the settings callback once the character's real file is loaded.
+mirror.init({
+    printf = printf,
+    warnf  = warnf,
+    errorf = errorf,
+    save   = function() settings.save(); end,
+});
+
 apply_saved_data();
 
 -- Helper function to save current hunt data
@@ -288,6 +308,11 @@ end
 -- Message handler functions
 local function handle_tome_interaction()
     training_data.is_active = true;
+
+    -- Positive proof for the mirror that the event currently open is an A.M.A.N.
+    -- book and not a shop, a trade or a cutscene. Without this the mirror falls
+    -- back to matching the NPC's name.
+    mirror.note_tome_text();
 end
 
 local function handle_training_start()
@@ -495,6 +520,13 @@ end);
 -- Event: Incoming packets
 ashita.events.register('packet_in', 'packet_in_cb', function (e)
     packet_handler.handle_incoming_packet(e);
+    mirror.handle_incoming_packet(e);
+end);
+
+-- Event: Outgoing packets. Only the mirror reads these: it captures the leader's
+-- own book interaction here.
+ashita.events.register('packet_out', 'packet_out_cb', function (e)
+    mirror.handle_outgoing_packet(e);
 end);
 
 -- Command handler
@@ -517,6 +549,7 @@ ashita.events.register('command', 'command_cb', function (e)
         printf('  /at ui imgui    - Switch to classic solid window');
         printf('  /at clear       - Clear current training data');
         printf('  /at debug       - Toggle death-packet logging');
+        printf('  /at mirror      - FoV/GoV multibox mirror (see /at mirror help)');
         printf('  /at test <name> - Test enemy name matching (debug)');
     elseif args[2] == 'ui' then
         if args[3] ~= nil and args[3] ~= '' then
@@ -542,6 +575,8 @@ ashita.events.register('command', 'command_cb', function (e)
     elseif args[2] == 'debug' then
         debug_enabled = not debug_enabled;
         printf('Death packet logging %s', debug_enabled and 'enabled' or 'disabled');
+    elseif args[2] == 'mirror' then
+        mirror.handle_command(args);
     elseif args[2] == 'test' then
         -- Test command: /at test <enemy_name>
         if #args < 3 then
@@ -618,6 +653,7 @@ end);
 -- Event: Render UI
 ashita.events.register('d3d_present', 'd3d_present_cb', function ()
     tracker_ui.render();
+    mirror.tick();
 end);
 
 -- Event: Addon unload - save data
