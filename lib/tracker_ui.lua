@@ -457,10 +457,6 @@ local function draw_bar_with_overlay(fraction, count_text, bar_color, content_fn
     end
 end
 
-local function draw_static_bar(content_fn, add_spacing)
-    draw_bar_with_overlay(nil, '', nil, content_fn, add_spacing);
-end
-
 -- Amber or teal callout: a wash, a stripe down the left, the line in that colour.
 local function draw_notice(text, hex)
     local h = S(18);
@@ -682,20 +678,44 @@ local function draw_regime_context()
         return;
     end
 
-    draw_static_bar(function()
-        if zone then
-            imgui.TextColored(COLORS.white, 'Training in ');
-            imgui.SameLine();
-            draw_zone_link(zone, COLORS.link);
-        else
-            imgui.TextColored(COLORS.orange, 'Training area unknown');
+    -- Plain caption, 2px from the window edge on each side. The level is drawn
+    -- on the draw list so that inset does not feed back into the panel width.
+    local content_x, content_y = imgui.GetCursorScreenPos();
+    local win_x = select(1, imgui.GetWindowPos());
+    local win_w = select(1, imgui.GetWindowSize());
+    local border = 1;
+    local left = win_x + border + 2;
+    local right = win_x + win_w - border - 2;
+
+    imgui.SetCursorScreenPos({ left, content_y });
+    if zone then
+        imgui.TextColored(COLORS.white, 'Training in ');
+        imgui.SameLine();
+        draw_zone_link(zone, COLORS.link);
+    else
+        imgui.TextColored(COLORS.orange, 'Training area unknown');
+    end
+
+    local text_top = select(2, imgui.GetItemRectMin());
+    local text_right_edge = select(1, imgui.GetItemRectMax());
+    local text_bottom = select(2, imgui.GetItemRectMax());
+
+    if level then
+        local right_text = 'Lv ' .. level;
+        local text_w = piece_w(right_text);
+        local level_x = right - text_w;
+        local min_x = text_right_edge + S(8);
+        if level_x < min_x then
+            level_x = min_x;
         end
-        if level then
-            local right_text = 'Lv ' .. level;
-            place_after(S(12), piece_w(right_text));
-            imgui.TextColored(rgba(HEX.text2), right_text);
-        end
-    end);
+        text_mid(imgui.GetWindowDrawList(), level_x, (text_top + text_bottom) / 2, right_text, HEX.text2, face('text'), BODY);
+        local overhang = content_x - left;
+        mark_width((text_right_edge - left) + S(8) + text_w - overhang);
+    else
+        mark_width(text_right_edge - content_x);
+    end
+
+    imgui.SetCursorScreenPos({ content_x, text_bottom + S(2) });
 end
 
 local function draw_enemy_row(enemy)

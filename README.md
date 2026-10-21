@@ -89,7 +89,7 @@ This hybrid approach ensures:
 - Hold Shift to drag. Otherwise the window stays where you left it
 - Title reads "AMAN" with a "Training" subtitle
 - Folding "TARGETS" header in small capitals
-- Training area is a BG-Wiki link, with the level range on the right of that well
+- Training area is a plain line, not a well: a BG-Wiki link, with the level range on the right
 - One well per target. The name is a wiki link, the count sits on the right, and a teal meter runs along the bottom
 - A finished target dims and stays on screen until the regime is cleared or replaced. When every target is done, the panel adds a "Regime complete" line
 
