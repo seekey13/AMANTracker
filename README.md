@@ -1,16 +1,8 @@
 # AMANTracker
 
-AMANTracker is an Ashita v4 addon for Final Fantasy XI that provides a GUI tracker for Adventurers' Mutual Aid Network (A.M.A.N.) Training Regimes, displaying real-time progress for your active training targets.
+AMANTracker is an Ashita v4 addon for Final Fantasy XI that tracks Adventurers' Mutual Aid Network (A.M.A.N.) Training Regimes and shows live kill progress.
 
-Two UI Options: New transparent floating text using Thorny's gdifonts
-
-<img width="340" alt="image" src="https://github.com/user-attachments/assets/499aaed2-e991-4bbb-ba3e-26a7a6165710" />
-
-
-Or the typical ImGui
-
-<img width="340" alt="image" src="https://github.com/user-attachments/assets/55408491-a689-4c94-b8e9-545d010b5282" />
-
+The window matches the Goldilox daily tracker: an untitled panel, a collapsing header, and one progress bar per target with the count on the right. Zone and enemy names open BG-Wiki. Hold Shift to drag the window.
 
 > **Note:**  
 > This addon was designed **EXCLUSIVELY** for the [CatsEyeXI private server](https://www.catseyexi.com/) and may not function as intended on retail or other private servers.  The message formats and mechanics are only tested specifically for CatsEyeXI.
@@ -18,18 +10,17 @@ Or the typical ImGui
 
 ## Features
 
-- **Dual UI Modes** - Choose between transparent floating text (GDI Fonts) or classic solid window (ImGui)
-- **Transparent Overlay** - Default mode uses outlined text that floats over the game (GDI Fonts mode)
-- **Classic Window Mode** - Traditional ImGui window with background (ImGui mode)
+- **Goldilox-style window** - Untitled auto-sized panel. Hold Shift to drag it; otherwise it stays locked
+- **Progress bars** - Each target fills as you get kills, with the count on the right. Finished targets turn grey
+- **Wiki links** - Zone names, family names, and mob names open BG-Wiki
 - **Family-based mob tracking** - Supports "Members of the X Family" training regimes
 - **16 mob families** - Pre-configured family definitions (Bat, Gigas, Goblin, Skeleton, etc.)
 - **Smart pattern matching** - Automatically detects family patterns vs exact mob names
 - **Hybrid packet/text detection** - Uses packets for reliable tracking with text fallback
 - **Automatic training regime detection** - Detects regime start, confirmation, and cancellation
 - **Real-time progress tracking** - Updates kill counts via packet events
-- **Persistent storage** - Saves progress and UI mode preference across sessions
+- **Persistent storage** - Saves progress across sessions
 - **Automatic regime resets** - Detects when training restarts
-- **Draggable UI** - Click and drag to reposition the tracker
 - **Fully automatic** - No setup required, just start training
 
 
@@ -41,21 +32,17 @@ Or the typical ImGui
    git clone https://github.com/seekey13/AMANTracker.git
    ```
 
-2. **For GDI Fonts mode (transparent text)**: Copy the `gdifonts` directory from [ffxi-trainmon](https://github.com/ThornyFFXI/ffxi-trainmon) into the AMANTracker folder
-   - The ImGui mode works without gdifonts
-
-3. Start or restart Ashita.
-4. Load the addon in-game:
+2. Start or restart Ashita.
+3. Load the addon in-game:
 
    ```
    /addon load amantracker
    ```
+
 ## Commands
 
 - `/at` - Show help and available commands
-- `/at ui` - Toggle the UI window visibility
-- `/at ui gdifonts` - Switch to transparent floating text mode (default)
-- `/at ui imgui` - Switch to classic solid window mode
+- `/at ui` - Toggle the tracker window. Hold Shift to drag it
 - `/at clear` - Clear current training data and reset tracker
 - `/at debug` - Toggle death-packet logging (prints message id, actor, target, target index, credit decision and resolved name)
 
@@ -96,23 +83,14 @@ This hybrid approach ensures:
 - Only clears on explicit game events (cancellation or new regime)
 
 ### UI Display
-- Two display modes: GDI Fonts (transparent) and ImGui (solid window)
-- Toggle visibility with `/at` or `/at ui` command
-- Switch modes with `/at ui gdifonts` or `/at ui imgui`
-- Only shows when training is active and parsed
-- **GDI Fonts Mode (Default)**:
-  - Transparent background with outlined text
-  - Floats over the game with no window borders
-  - Draggable by clicking anywhere on the text
-  - ImGui progress bars with outlined text labels
-  - Consistent spacing regardless of text content
-- **ImGui Mode**:
-  - Traditional solid window with background
-  - Title bar and window decorations
-  - Auto-resizes height based on number of enemies
-  - Adjustable width (300-500px)
-- Progress bars with kill count overlays
-- UI mode preference saved automatically
+- One window, laid out like the Goldilox daily tracker
+- Shows while a training regime is active and at least one target is known
+- Toggle visibility with `/at ui`
+- Hold Shift to drag. Otherwise the window stays where you left it
+- Collapsing "A.M.A.N. Training" header
+- Training area is a BG-Wiki link, with the level range on the right
+- One progress bar per target. The name is a wiki link and the count sits on the right
+- A finished target turns grey and stays on screen until the regime is cleared or replaced
 
 
 ## Data Storage
@@ -124,7 +102,6 @@ Stored data includes:
 - Enemy list with kill counts
 - Target level range
 - Training area zone
-- UI mode preference (gdifonts or imgui)
 
 
 ## Requirements
@@ -157,7 +134,14 @@ Completely unnecessary AI generated image
 
 
 ## Changelog
-### Version 2.7 (Current)
+### Version 2.8 (Current)
+- **Goldilox-style window**: Replaced both the GDI Fonts overlay and the classic ImGui window with one untitled panel. It uses the same header, bar, and link treatment as Goldilox
+- **Removed the GDI Fonts UI**: Deleted the bundled `gdifonts` library. `/at ui gdifonts` and `/at ui imgui` are gone. `/at ui` still shows and hides the window
+- **Shift to drag**: The window stays locked unless Shift is held
+- **Wiki links**: The training area, family names, and mob names open BG-Wiki
+- Saved `ui_mode` is dropped the next time hunt data is saved
+
+### Version 2.7
 - **Fixed Actor-less Kill Credit**: Self-destruct and damage-over-time deaths arrive as action message 20 ("The Bomb falls to the ground."), which names no actor the client can match against the party, so the kill was silently dropped
 - **Expanded Death Message Detection**: Added messages 20, 97 (defeated by), 113 (spell), 406 (weapon skill) and 605 (additional effect) alongside the existing 6 and 646
 - **Added Engaged-Mob List**: Built from Action packets (0x28), tracking every mob a party member or their pet has acted on; an actor-less death is credited only if the dying mob is on it

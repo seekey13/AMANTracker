@@ -9,7 +9,7 @@ This addon is designed for Ashita v4.
 
 addon.name      = 'AMANTracker';
 addon.author    = 'Seekey';
-addon.version   = '2.7';
+addon.version   = '2.8';
 addon.desc      = 'GUI Tracker for Adventurers Mutual Aid Network Training Regimes';
 addon.link      = 'https://github.com/seekey13/AMANTracker';
 
@@ -56,8 +56,6 @@ local MESSAGES = {
 };
 
 -- Persistent hunt fields (synced both ways between training_data and saved_data).
--- ui_mode is deliberately not here: it lives only on saved_data, so syncing back
--- from training_data can't blank it out.
 local PERSISTENT_FIELDS = {
     'is_active',
     'enemies',
@@ -71,7 +69,6 @@ local default_settings = T{
     enemies = {},  -- Array of {total, killed, name, match_type} tables
     target_level_range = nil,
     training_area_zone = nil,
-    ui_mode = 'gdifonts',  -- 'gdifonts' or 'imgui'
 };
 
 -- Training data storage (includes both persistent and transient data)
@@ -117,7 +114,8 @@ end
 -- 0x000A zone-in packet, which raises the settings event.
 local function apply_saved_data()
     sync_persistent_data(saved_data, training_data);
-    tracker_ui.set_ui_mode(saved_data.ui_mode or 'gdifonts');
+    -- Drop the retired GDI/ImGui mode switch so the next save stops writing it.
+    saved_data.ui_mode = nil;
 
     if training_data.is_active and #training_data.enemies > 0 then
         printf(MESSAGES.RESTORED_HUNT);
@@ -128,7 +126,7 @@ local function apply_saved_data()
 end
 
 -- Initialize the UI with training data reference
-tracker_ui.init(training_data, saved_data.ui_mode or 'gdifonts');
+tracker_ui.init(training_data);
 apply_saved_data();
 
 -- Helper function to save current hunt data
@@ -512,28 +510,16 @@ ashita.events.register('command', 'command_cb', function (e)
         -- /at - show help
         printf('AMANTracker Commands:');
         printf('  /at             - Show this help');
-        printf('  /at ui          - Toggle UI visibility');
-        printf('  /at ui gdifonts - Switch to transparent floating text (default)');
-        printf('  /at ui imgui    - Switch to classic solid window');
+        printf('  /at ui          - Toggle the tracker (hold Shift to drag it)');
         printf('  /at clear       - Clear current training data');
         printf('  /at debug       - Toggle death-packet logging');
         printf('  /at test <name> - Test enemy name matching (debug)');
     elseif args[2] == 'ui' then
         if args[3] ~= nil and args[3] ~= '' then
-            -- /at ui <mode>
-            local mode = args[3]:lower();
-            if mode == 'gdifonts' or mode == 'imgui' then
-                saved_data.ui_mode = mode;
-                settings.save();
-                tracker_ui.set_ui_mode(mode);
-                printf('UI mode set to: %s', mode);
-            else
-                errorf('Invalid UI mode. Use "gdifonts" or "imgui"');
-            end
+            printf('The tracker has one window. Use /at ui to show or hide it.');
         else
-            -- /at ui - toggle visibility
             tracker_ui.toggle();
-            local status = tracker_ui.is_visible() and "opened" or "closed";
+            local status = tracker_ui.is_visible() and 'opened' or 'closed';
             printf('UI %s', status);
         end
     elseif args[2] == 'clear' then
@@ -620,8 +606,14 @@ ashita.events.register('d3d_present', 'd3d_present_cb', function ()
     tracker_ui.render();
 end);
 
+-- Hold Shift to drag the window. Same transition test Goldilox uses.
+ashita.events.register('key', 'amantracker_key_cb', function(e)
+    if e.wparam == 0x10 then -- VK_SHIFT
+        tracker_ui.shift_held = not (bit.band(e.lparam, bit.lshift(0x8000, 0x10)) == bit.lshift(0x8000, 0x10));
+    end
+end);
+
 -- Event: Addon unload - save data
 ashita.events.register('unload', 'unload_cb', function()
     save_training_data();
-    tracker_ui.cleanup();
 end);
