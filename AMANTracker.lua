@@ -510,7 +510,7 @@ ashita.events.register('command', 'command_cb', function (e)
         -- /at - show help
         printf('AMANTracker Commands:');
         printf('  /at             - Show this help');
-        printf('  /at ui          - Toggle the tracker (hold Shift to drag it)');
+        printf('  /at ui          - Toggle the tracker (hold Shift to drag, or click the x)');
         printf('  /at clear       - Clear current training data');
         printf('  /at debug       - Toggle death-packet logging');
         printf('  /at test <name> - Test enemy name matching (debug)');
